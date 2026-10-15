@@ -79,7 +79,8 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         c.deadline = uint64(block.timestamp + 50 minutes);
         c.name = "CLOVER";
         c.symbol = "CLOVER";
-        c.tokenFeeBps = 500;
+        c.tokenFeeBps = 300;
+        c.genesisCanvasShareBps = 2000;
         c.genesisSize = 12;
         c.genesisRentBps = 500;
         c.genesisFadeTime = 3 days;
@@ -184,8 +185,9 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         uint256 bought = pxa.balanceOf(trader);
         assertGt(bought, 0);
         assertEq(hook.platformAccrued() - plat0, 0.003 ether, "30 bps on 1 ETH");
-        // 5 % token fee on 1 ETH is pending for the Genesis canvas, and flush funds it.
-        assertGe(hook.canvasPending(0), 0.05 ether);
+        // 3 % token fee on 1 ETH: 20 % (0.006 ETH) pending for the Genesis canvas, 80 % owed to the creator.
+        assertGe(hook.canvasPending(0), 0.006 ether);
+        assertGe(hook.creatorOwed(launchWallet), 0.024 ether);
         hook.flush(0);
         assertEq(hook.canvasPending(0), 0);
 

@@ -1,10 +1,8 @@
-Compiling 3 files with Solc 0.8.26
-Solc 0.8.26 finished in 2.74s
-Compiler run successful!
+No files changed, compilation skipped
 
 Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
 [PASS] test_fork_bindingsMatchManifest() (gas: 17216)
-[PASS] test_fork_launchAndStamp_thenUniversalRouterSwaps() (gas: 26615732)
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.87s (2.82s CPU time)
+[PASS] test_fork_launchAndStamp_thenUniversalRouterSwaps() (gas: 24121168)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.65s (2.62s CPU time)
 
-Ran 1 test suite in 2.88s (2.87s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Ran 1 test suite in 2.65s (2.65s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

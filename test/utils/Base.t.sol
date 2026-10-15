@@ -47,7 +47,7 @@ abstract contract Base is Test {
 
         canvas = new CloverCanvas(protocol);
         launchpad = new Launchpad(
-            manager, hook, canvas, creator, GENESIS_FEE_BPS, GENESIS_SIZE, GENESIS_RENT_BPS, GENESIS_FADE, GENESIS_START
+            manager, hook, canvas, creator, GENESIS_FEE_BPS, 10_000, GENESIS_SIZE, GENESIS_RENT_BPS, GENESIS_FADE, GENESIS_START
         );
         clover = new CloverToken("CLOVER", "CLOVER", address(launchpad));
 

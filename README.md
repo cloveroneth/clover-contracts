@@ -18,8 +18,8 @@ All fees are charged by the hook in native ETH, on the gross ETH leg of each tra
   permissionless `claimPlatform()` to the immutable `PLATFORM_RECIPIENT`
   (`0xD88539d3c4C460136a733A3Fd60cf6BF269079da`). It applies to every pool on the hook, including the initial buy.
 - **Token fee**: 1 to 10 %, fixed per token at launch (3 % for $CLOVER). `canvasShareBps` of it goes to the token's
-  canvas (sent by the permissionless `flush`), the rest to the token creator (`claimCreator`). $CLOVER sends 100 %
-  to the Genesis canvas. The canvas share can be raised at any time, and lowered by at most 10 points per 7 days,
+  canvas (sent by the permissionless `flush`), the rest to the token creator (`claimCreator`). $CLOVER sends 20 %
+  to the Genesis canvas and 80 % to its creator. The canvas share can be raised at any time, and lowered by at most 10 points per 7 days,
   never below 20 %.
 - The pool LP fee is 0.
 

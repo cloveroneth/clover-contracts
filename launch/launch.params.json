@@ -1,27 +1,49 @@
 {
-  "launchWallet": "0x0000000000000000000000000000000000000001",
-  "protocolRecipient": "0x0000000000000000000000000000000000000001",
-  "devBuyWei": "0",
+  "launchWallet": "0x70C540b45cAd980125b9cEAf7DaE431EdEF135B7",
+  "protocolRecipient": "0x70C540b45cAd980125b9cEAf7DaE431EdEF135B7",
+  "devBuyWei": "50000000000000000",
   "publicOriginUrl": "https://github.com/cloveroneth/clover-contracts",
   "genesis": {
     "tokenFeeBps": 300,
+    "canvasShareBps": 2000,
     "size": 12,
     "rentBps": 500,
     "fadeTimeSeconds": 259200,
     "startPriceWei": "2000000000000000"
   },
-  "token": { "name": "CLOVER", "symbol": "CLOVER" },
+  "token": {
+    "name": "CLOVER",
+    "symbol": "CLOVER"
+  },
   "presentation": {
-    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from the swap fees of $CLOVER: 3% per trade, all of it paid to the Genesis canvas.",
-    "image": { "sourcePath": "assets/clover-logo.png", "uri": "https://cloverpixel.xyz/logo.png" },
+    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3% fee per trade: 20% of it funds the Genesis canvas, 80% goes to the creator.",
+    "image": {
+      "sourcePath": "assets/clover-logo.png",
+      "uri": "https://cloverpixel.xyz/logo.png"
+    },
     "links": [
-      { "kind": "website", "uri": "https://cloverpixel.xyz/" },
-      { "kind": "x", "uri": "https://x.com/CloverOnETH" },
-      { "kind": "github", "uri": "https://github.com/cloveroneth/clover-contracts" }
+      {
+        "kind": "website",
+        "uri": "https://cloverpixel.xyz/"
+      },
+      {
+        "kind": "x",
+        "uri": "https://x.com/CloverOnETH"
+      },
+      {
+        "kind": "github",
+        "uri": "https://github.com/cloveroneth/clover-contracts"
+      }
     ]
   },
   "attestationEvidence": [
-    { "checkId": "unit-and-fuzz-tests", "evidence": "launch/evidence/unit-tests.txt" },
-    { "checkId": "mainnet-fork-router-launch", "evidence": "launch/evidence/fork-launch-test.txt" }
+    {
+      "checkId": "unit-and-fuzz-tests",
+      "evidence": "launch/evidence/unit-tests.txt"
+    },
+    {
+      "checkId": "mainnet-fork-router-launch",
+      "evidence": "launch/evidence/fork-launch-test.txt"
+    }
   ]
 }

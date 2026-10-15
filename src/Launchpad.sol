@@ -50,6 +50,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     /// @dev Genesis ($CLOVER) parameters, fixed at deployment.
     address public immutable genesisCreator;
     uint16 public immutable genesisTokenFeeBps;
+    /// @dev Share of the $CLOVER token fee sent to the Genesis canvas; the rest is owed to `genesisCreator`.
+    uint16 public immutable genesisCanvasShareBps;
     uint8 public immutable genesisSize;
     uint16 public immutable genesisRentBps;
     uint32 public immutable genesisFadeTime;
@@ -112,6 +114,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         CloverCanvas canvas_,
         address genesisCreator_,
         uint16 genesisTokenFeeBps_,
+        uint16 genesisCanvasShareBps_,
         uint8 genesisSize_,
         uint16 genesisRentBps_,
         uint32 genesisFadeTime_,
@@ -127,6 +130,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         DEPLOYER = msg.sender;
         genesisCreator = genesisCreator_;
         genesisTokenFeeBps = genesisTokenFeeBps_;
+        genesisCanvasShareBps = genesisCanvasShareBps_;
         genesisSize = genesisSize_;
         genesisRentBps = genesisRentBps_;
         genesisFadeTime = genesisFadeTime_;
@@ -143,7 +147,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint256 canvasId = canvas.createCanvasFor(
             genesisCreator, "Genesis", genesisSize, genesisRentBps, genesisFadeTime, genesisStartPrice, address(clover)
         );
-        _launch(address(clover), genesisCreator, genesisTokenFeeBps, 10_000, canvasId, msg.value, 0);
+        _launch(address(clover), genesisCreator, genesisTokenFeeBps, genesisCanvasShareBps, canvasId, msg.value, 0);
     }
 
     // ---------------------------------------------------------------- public launch

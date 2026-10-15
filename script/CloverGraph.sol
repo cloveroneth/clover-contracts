@@ -46,6 +46,7 @@ abstract contract CloverGraph {
         string name;
         string symbol;
         uint16 tokenFeeBps;
+        uint16 genesisCanvasShareBps;
         uint8 genesisSize;
         uint16 genesisRentBps;
         uint32 genesisFadeTime;
@@ -155,6 +156,7 @@ abstract contract CloverGraph {
                 p.accounts[T_CANVAS],
                 c.launchWallet,
                 c.tokenFeeBps,
+                c.genesisCanvasShareBps,
                 c.genesisSize,
                 c.genesisRentBps,
                 c.genesisFadeTime,
