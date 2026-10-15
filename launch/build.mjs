@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Builds the Programmable Custom Launch package for $CLOVER (Ethereum, profile 3.6.0).
+// Builds the Programmable Custom Launch package for $CLOVER (Ethereum). `pack` selects the live profile and fee
+// policy from /v3/capabilities, since the config does not pin a profile version.
 //
 // Compiles the exact sources with solc 0.8.26+commit.8a97fa7a, writes the Standard JSON input, the four
 // compiler artifacts and programmable-launch.config.json. Then:
@@ -188,7 +189,6 @@ const devBuyWei = String(params.devBuyWei ?? "0");
 const now = Math.floor(Date.now() / 1000);
 const config = {
   schemaVersion: "programmable.launch-pack-config.v3",
-  profileVersion: "3.6.0",
   launchWallet: params.launchWallet,
   chainId: "1",
   nonce,
