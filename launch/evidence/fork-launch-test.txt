@@ -1,0 +1,10 @@
+Compiling 3 files with Solc 0.8.26
+Solc 0.8.26 finished in 2.74s
+Compiler run successful!
+
+Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
+[PASS] test_fork_bindingsMatchManifest() (gas: 17216)
+[PASS] test_fork_launchAndStamp_thenUniversalRouterSwaps() (gas: 26615732)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.87s (2.82s CPU time)
+
+Ran 1 test suite in 2.88s (2.87s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
