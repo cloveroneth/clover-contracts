@@ -53,13 +53,17 @@ contract CloverHook is IHooks {
     IPoolManager public immutable poolManager;
     address public immutable PLATFORM_RECIPIENT;
     address public immutable DEPLOYER;
-    /// @notice Programmable `EthereumNativeFeeVaultV3` holding the platform fee as backed PoolManager claims.
-    EthereumNativeFeeVaultV3 public immutable feeVault;
+
 
     // ---------------------------------------------------------------- wiring (set once)
 
     address public launchpad;
     CloverCanvas public canvas;
+
+    /// @notice Programmable `EthereumNativeFeeVaultV3` holding the platform fee as backed PoolManager claims.
+    /// @dev Written once by the constructor (the vault is this hook's first CREATE); there is no setter. Kept in
+    ///      storage rather than as an immutable because its address derives from the hook's own address.
+    EthereumNativeFeeVaultV3 public feeVault;
 
     // ---------------------------------------------------------------- state
 

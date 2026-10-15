@@ -1,12 +1,14 @@
-No files changed, compilation skipped
+Compiling 2 files with Solc 0.8.26
+Solc 0.8.26 finished in 3.10s
+Compiler run successful!
 
 Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
 [PASS] test_fork_bindingsMatchManifest() (gas: 17282)
-[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 28184418)
+[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 28387842)
 Logs:
-  hook salt iterations: 2612
-  hook: 0x1F12ad814218EEab5bE1ee552F16C3DC71CC28cC
-  CLOVER: 0xf89f6C3dc88331280DB1ee67BC33eaA05064de52
+  hook salt iterations: 3142
+  hook: 0xec961Ab0431e376d328e2ac205bf672CF4Ada8CC
+  CLOVER: 0x66384D5300c2f327e316FB86Dd159fe7241BaBf4
   initial buy gross wei: 50000000000000000
   initial buy platformAccrued delta wei: 150000000000000
   initial buy vault PoolManager native claims wei: 150000000000000
@@ -96,8 +98,8 @@ Logs:
     vault backing delta wei: 900000000000000
     recipient ETH delta (route charge) wei: 0
   claimPlatform paid to 0xD885...79da wei: 18122505968229796
-  gas child launch: 1250765
+  gas child launch: 1250983
 
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.36s (3.37s CPU time)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.44s (3.42s CPU time)
 
-Ran 1 test suite in 3.36s (3.36s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Ran 1 test suite in 3.44s (3.44s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

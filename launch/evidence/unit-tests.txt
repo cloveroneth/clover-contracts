@@ -1,22 +1,24 @@
-No files changed, compilation skipped
+Compiling 5 files with Solc 0.8.26
+Solc 0.8.26 finished in 4.10s
+Compiler run successful!
 
 Ran 12 tests for test/CloverHook.t.sol:CloverHookTest
-[PASS] test_BuyFeeSplit() (gas: 175644)
+[PASS] test_BuyFeeSplit() (gas: 178104)
 [PASS] test_CanvasShareRules() (gas: 1275897)
-[PASS] test_ChildLaunch() (gas: 1526566)
-[PASS] test_FeeVaultOnlyKernel() (gas: 11708)
-[PASS] test_FlushRewardsHolders() (gas: 443982)
-[PASS] test_GenesisInitialBuyPaysPlatform() (gas: 16168)
+[PASS] test_ChildLaunch() (gas: 1529002)
+[PASS] test_FeeVaultOnlyKernel() (gas: 13829)
+[PASS] test_FlushRewardsHolders() (gas: 446200)
+[PASS] test_GenesisInitialBuyPaysPlatform() (gas: 18531)
 [PASS] test_GenesisOnlyOnce() (gas: 17761)
 [PASS] test_GenesisPool() (gas: 38724)
 [PASS] test_LaunchValidation() (gas: 856435)
-[PASS] test_PlatformClaim() (gas: 218818)
-[PASS] test_SellFeeAndFlush() (gas: 354651)
-[PASS] test_SellPaysPlatform() (gas: 240626)
-Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 7.62ms (12.15ms CPU time)
+[PASS] test_PlatformClaim() (gas: 221157)
+[PASS] test_SellFeeAndFlush() (gas: 357087)
+[PASS] test_SellPaysPlatform() (gas: 243304)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 6.40ms (5.56ms CPU time)
 
 Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
-[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4091623, ~: 4102517)
+[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4090631, ~: 4088405)
 [PASS] test_CaptureHeldSplitAndRefund() (gas: 305333)
 [PASS] test_CollectClaimsAndWithdraws() (gas: 314331)
 [PASS] test_CooldownAndGuards() (gas: 303011)
@@ -30,6 +32,6 @@ Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
 [PASS] test_Profile() (gas: 46917)
 [PASS] test_ReleaseThenReopen() (gas: 289221)
 [PASS] test_TransferPaysSenderRewards() (gas: 348314)
-Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 404.47ms (414.94ms CPU time)
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 408.42ms (417.49ms CPU time)
 
-Ran 2 test suites in 405.95ms (412.09ms CPU time): 26 tests passed, 0 failed, 0 skipped (26 total tests)
+Ran 2 test suites in 409.84ms (414.82ms CPU time): 26 tests passed, 0 failed, 0 skipped (26 total tests)
