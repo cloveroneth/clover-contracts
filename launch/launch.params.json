@@ -16,7 +16,7 @@
     "symbol": "CLOVER"
   },
   "presentation": {
-    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3% fee per trade: 20% of it funds the Genesis canvas, 80% goes to the creator.",
+    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. Total fee on a $CLOVER trade through programmable.market: about 3.3%, made of Programmable's 0.3% platform fee plus the 3% CLOVER fee (20% to the Genesis canvas, 80% to the creator). Trades through other routers pay only the 3% CLOVER fee.",
     "image": {
       "sourcePath": "assets/clover-logo.png",
       "uri": "https://cloverpixel.xyz/logo.png"

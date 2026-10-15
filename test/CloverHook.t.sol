@@ -23,11 +23,24 @@ contract CloverHookTest is Base {
         assertGt(clover.balanceOf(creator), 0);
     }
 
+    function test_GenesisInitialBuyPaysPlatformOnce() public view {
+        // 0.1 ETH initial buy: 30 bps floored, paid atomically to the Programmable recipient.
+        assertEq(platform.balance, 0.1 ether * 30 / 10_000);
+        // The hook charged no platform fee on the Genesis pool.
+        assertEq(hook.platformAccrued(), 0);
+        // The pool received the rest: its 5 % token fee is on 0.0997 ETH.
+        assertEq(hook.canvasPending(0), 0.0997 ether * 50_000 / 1_000_000);
+    }
+
     function test_BuyFeeSplit() public {
         uint256 pendingBefore = hook.canvasPending(0);
         uint256 platformBefore = hook.platformAccrued();
         buyExactIn(alice, cloverKey, 1 ether);
-        assertEq(hook.platformAccrued() - platformBefore, 0.003 ether);
+        // Genesis pool: no hook platform fee (Programmable collects on its route).
+        assertEq(hook.platformAccrued() - platformBefore, 0);
+        (uint256 qp, uint256 qt) = hook.quoteFee(cloverKey.toId(), 1 ether);
+        assertEq(qp, 0);
+        assertEq(qt, 0.05 ether);
         assertEq(hook.canvasPending(0) - pendingBefore, 0.05 ether); // 5 % token fee, 100 % to the canvas
         assertEq(hook.creatorOwed(creator), 0);
     }
@@ -54,11 +67,14 @@ contract CloverHookTest is Base {
         assertApproxEqAbs(canvas.pixel(pid(0, 0)).pendingRewards, pending / 144, 1);
     }
 
-    function test_PlatformClaim() public {
-        buyExactIn(alice, cloverKey, 1 ether);
-        uint256 accrued = hook.platformAccrued();
+    function test_PlatformClaimChildPool() public {
+        (,,, PoolKey memory key) = launchChild(alice, 300, 5_000, 0);
+        uint256 before = platform.balance;
+        buyExactIn(bob, key, 1 ether);
+        assertEq(hook.platformAccrued(), 0.003 ether);
         hook.claimPlatform();
-        assertEq(platform.balance, accrued);
+        assertEq(platform.balance - before, 0.003 ether);
+        assertEq(hook.platformAccrued(), 0);
     }
 
     function test_ChildLaunch() public {

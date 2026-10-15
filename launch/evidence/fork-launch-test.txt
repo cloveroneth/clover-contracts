@@ -1,8 +1,26 @@
 No files changed, compilation skipped
 
 Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
-[PASS] test_fork_bindingsMatchManifest() (gas: 17216)
-[PASS] test_fork_launchAndStamp_thenUniversalRouterSwaps() (gas: 24121168)
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.65s (2.62s CPU time)
+[PASS] test_fork_bindingsMatchManifest() (gas: 17282)
+[PASS] test_fork_launchAndStamp_thenProgrammableRoutedSwaps() (gas: 34144188)
+Logs:
+  hook salt iterations: 28943
+  hook: 0xE4fA7C9CCcf824B1dec468Fe376a7D8483e1E8cc
+  CLOVER: 0xE224D87F4a17Ac8E9b8ae14d083F178821dDce1C
+  initial buy gross wei: 50000000000000000
+  initial buy Programmable recipient delta wei: 150000000000000
+  routed buy gross wei: 1000000000000000000
+  routed buy Programmable recipient delta wei: 3000000000000000
+  routed buy hook platformAccrued delta wei: 0
+  routed buy trader ETH spent wei: 1000000000000000000
+  routed buy CLOVER received: 310917280666795341507669486
+  routed sell CLOVER in: 310917280666795341507669486
+  routed sell gross ETH output credit wei: 938077300000000000
+  routed sell Programmable recipient delta wei: 2814231900000000
+  routed sell hook platformAccrued delta wei: 0
+  routed sell trader ETH received wei: 935263068100000000
+  gas child launch: 1182801
 
-Ran 1 test suite in 2.65s (2.65s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.29s (3.21s CPU time)
+
+Ran 1 test suite in 3.29s (3.29s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

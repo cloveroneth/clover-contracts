@@ -34,6 +34,10 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
 
     /// @notice Paid on every launch, into the Genesis canvas rewards.
     uint256 public constant LAUNCH_FEE = 0.01 ether;
+    /// @notice Programmable fee on the Genesis initial buy: 30 bps of the funded ETH, floored once, paid
+    ///         atomically to the hook's `PLATFORM_RECIPIENT`. Same basis and rounding as a buy routed through
+    ///         programmable.market, so the Genesis pool has a single platform-fee collection path.
+    uint256 public constant GENESIS_BUY_PLATFORM_FEE_BPS = 30;
     int24 public constant TICK_SPACING = 200;
     /// @dev floor(log_1.0001(1e9 / 2) / 200) * 200: starting FDV ~2.0224 ETH.
     int24 public constant TICK_UPPER = 200_200;
@@ -98,6 +102,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     );
     event LiquidityLocked(uint256 indexed tokenIndex, uint128 liquidity, uint256 tokenAmount, uint256 dust);
     event DevBuy(uint256 indexed tokenIndex, address indexed creator, uint256 ethIn, uint256 tokensOut);
+    event GenesisBuyPlatformFee(address indexed recipient, uint256 grossEth, uint256 amount);
 
     error NotDeployer();
     error AlreadyGenesis();
@@ -107,6 +112,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     error InsufficientValue();
     error SlippageExceeded(uint256 out, uint256 minOut);
     error ZeroAddress();
+    error TransferFailed();
 
     constructor(
         IPoolManager poolManager_,
@@ -140,14 +146,24 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     // ---------------------------------------------------------------- genesis ($CLOVER, tokenIndex 0, canvas 0)
 
     /// @notice Last initializer of the Programmable graph. Sets up the $CLOVER pool, its locked liquidity and
-    ///         the Genesis canvas (canvas share 100 %). `msg.value` is an initial buy for `genesisCreator`.
+    ///         the Genesis canvas. `msg.value` is an initial buy for `genesisCreator`; 30 bps of it go to the
+    ///         Programmable recipient first.
     function genesis(CloverToken clover) external payable nonReentrant {
         if (msg.sender != DEPLOYER) revert NotDeployer();
         if (_tokens.length != 0) revert AlreadyGenesis();
+        uint256 platformFee = msg.value * GENESIS_BUY_PLATFORM_FEE_BPS / 10_000;
+        if (platformFee != 0) {
+            address recipient = hook.PLATFORM_RECIPIENT();
+            emit GenesisBuyPlatformFee(recipient, msg.value, platformFee);
+            (bool ok,) = recipient.call{value: platformFee}("");
+            if (!ok) revert TransferFailed();
+        }
         uint256 canvasId = canvas.createCanvasFor(
             genesisCreator, "Genesis", genesisSize, genesisRentBps, genesisFadeTime, genesisStartPrice, address(clover)
         );
-        _launch(address(clover), genesisCreator, genesisTokenFeeBps, genesisCanvasShareBps, canvasId, msg.value, 0);
+        _launch(
+            address(clover), genesisCreator, genesisTokenFeeBps, genesisCanvasShareBps, canvasId, msg.value - platformFee, 0
+        );
     }
 
     // ---------------------------------------------------------------- public launch

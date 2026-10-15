@@ -24,7 +24,12 @@ interface IPermit2 {
 }
 
 /// @notice Mainnet fork: full Router launch with a mocked EIP-1271 authority, then swaps through the
-///         canonical Universal Router with empty hookData. Skipped when ETH_RPC_URL is not set.
+///         Programmable routed trade path (the router used by programmable.market prepare) and the canonical
+///         Uniswap Universal Router, with empty hookData. Skipped when ETH_RPC_URL is not set.
+///
+/// Programmable route calldata: the buy copies a live `POST /api/swap/ethereum/prepare` response for a
+/// `programmable_routed` pool (commands 0x05 TRANSFER fee, 0x10 V4_SWAP net, 0x04 SWEEP). For the sell, the
+/// fee is taken from the gross ETH output: 0x10 V4_SWAP with TAKE to the router, 0x06 PAY_PORTION 30 bps, 0x04 SWEEP.
 /// @dev Expected values come from the live manifest (manifestVersion 12). The prepare script re-reads it.
 contract CloverLaunchForkTest is Test, CloverGraph {
     using PoolIdLibrary for PoolKey;
@@ -45,10 +50,16 @@ contract CloverLaunchForkTest is Test, CloverGraph {
     // Uniswap canonical mainnet deployments.
     address constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    /// @dev Router in the transactions returned by programmable.market `/api/swap/ethereum/prepare`.
+    address constant PROGRAMMABLE_SWAP_ROUTER = 0xd92A36B0000531EF3063dEd4De20A0783308446C;
+    uint256 constant ROUTED_FEE_BPS = 30;
+    address constant MSG_SENDER = address(1);
+    address constant ADDRESS_THIS = address(2);
 
     address launchWallet = makeAddr("launchWallet");
     address trader = makeAddr("trader");
     bool forked;
+    uint256 recipientBeforeLaunch;
 
     Config cfg;
     Prepared prep;
@@ -101,7 +112,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         assertEq(r.PERMIT_AUTHORITY().codehash, r.PERMIT_AUTHORITY_RUNTIME_CODE_HASH());
     }
 
-    function test_fork_launchAndStamp_thenUniversalRouterSwaps() public onlyFork {
+    function test_fork_launchAndStamp_thenProgrammableRoutedSwaps() public onlyFork {
         cfg = _config();
         Prepared memory p = prepare(cfg);
         emit log_named_uint("hook salt iterations", p.saltIterations);
@@ -112,8 +123,10 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         (uint160 sqrtBefore,,,) = IPoolManager(POOL_MANAGER).getSlot0(p.stampRequest.poolKey.toId());
         assertEq(sqrtBefore, 0);
 
+        recipientBeforeLaunch = PLATFORM_RECIPIENT.balance;
         (bytes32 stampHash, Vm.Log[] memory logs) = simulateLaunchWithMockedAuthority(cfg, p);
         assertTrue(stampHash != bytes32(0));
+        _checkInitialBuyFee(p);
 
         // Runtime hashes predicted in the graph simulation match the deployed code.
         for (uint256 i; i < N_TARGETS; ++i) {
@@ -164,50 +177,119 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         canvas.capture{value: 0.002 ether + 0.01 ether}(0, 0.002 ether, 0.05 ether, 0x7bc043);
         assertEq(canvas.ownerOf(0), trader);
 
-        _universalRouterSwaps(p);
+        _programmableRoutedSwaps(p);
+        _externalSwapNoSecondFee(p);
         _childLaunch(p);
     }
 
-    function _universalRouterSwaps(Prepared memory p) internal {
+    /// @notice Initial buy (0.05 ETH): exactly 30 bps floored to the Programmable recipient, once.
+    function _checkInitialBuyFee(Prepared memory p) internal {
+        uint256 initialFee = PLATFORM_RECIPIENT.balance - recipientBeforeLaunch;
+        emit log_named_uint("initial buy gross wei", cfg.devBuy);
+        emit log_named_uint("initial buy Programmable recipient delta wei", initialFee);
+        assertEq(initialFee, cfg.devBuy * ROUTED_FEE_BPS / 10_000, "initial buy fee");
+        assertEq(CloverHook(payable(p.accounts[T_HOOK])).platformAccrued(), 0, "no hook platform fee on Genesis");
+    }
+
+    function _programmableRoutedSwaps(Prepared memory p) internal {
         PoolKey memory key = p.stampRequest.poolKey;
         CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
-        CloverToken pxa = CloverToken(p.accounts[T_TOKEN]);
+        CloverToken clover = CloverToken(p.accounts[T_TOKEN]);
+        address token = p.accounts[T_TOKEN];
+        assertGt(PROGRAMMABLE_SWAP_ROUTER.code.length, 0, "Programmable swap router");
         vm.deal(trader, 10 ether);
 
-        // Buy: exact input 1 ETH, empty hookData.
+        // Buy 1 ETH through the Programmable route.
+        uint256 amountIn = 1 ether;
+        uint256 fee = amountIn * ROUTED_FEE_BPS / 10_000;
+        uint256 r0 = PLATFORM_RECIPIENT.balance;
         uint256 plat0 = hook.platformAccrued();
-        vm.prank(trader);
-        uint256 g0 = gasleft();
-        IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 1 ether}(
-            hex"10", _v4ExactInSingle(key, true, 1 ether), block.timestamp
-        );
-        emit log_named_uint("gas UR buy exact-in", g0 - gasleft());
-        uint256 bought = pxa.balanceOf(trader);
+        uint256 canvas0 = hook.canvasPending(0);
+        uint256 creator0 = hook.creatorOwed(launchWallet);
+        uint256 t0 = trader.balance;
+        {
+            bytes[] memory inputs = new bytes[](3);
+            inputs[0] = abi.encode(address(0), PLATFORM_RECIPIENT, fee);
+            inputs[1] = _v4Input(key, true, uint128(amountIn - fee), address(0), token, 0x0f, address(0));
+            inputs[2] = abi.encode(address(0), MSG_SENDER, uint256(0));
+            vm.prank(trader);
+            IUniversalRouter(PROGRAMMABLE_SWAP_ROUTER).execute{value: amountIn}(hex"051004", inputs, block.timestamp);
+        }
+        uint256 bought = clover.balanceOf(trader);
+        emit log_named_uint("routed buy gross wei", amountIn);
+        emit log_named_uint("routed buy Programmable recipient delta wei", PLATFORM_RECIPIENT.balance - r0);
+        emit log_named_uint("routed buy hook platformAccrued delta wei", hook.platformAccrued() - plat0);
+        emit log_named_uint("routed buy trader ETH spent wei", t0 - trader.balance);
+        emit log_named_uint("routed buy CLOVER received", bought);
+        assertEq(PLATFORM_RECIPIENT.balance - r0, 0.003 ether, "routed buy: 30 bps once");
+        assertEq(hook.platformAccrued(), plat0, "routed buy: no second platform fee");
+        assertEq(t0 - trader.balance, amountIn);
         assertGt(bought, 0);
-        assertEq(hook.platformAccrued() - plat0, 0.003 ether, "30 bps on 1 ETH");
-        // 3 % token fee on 1 ETH: 20 % (0.006 ETH) pending for the Genesis canvas, 80 % owed to the creator.
-        assertGe(hook.canvasPending(0), 0.006 ether);
-        assertGe(hook.creatorOwed(launchWallet), 0.024 ether);
+        // 3 % CLOVER fee on the 0.997 ETH that reached the pool: 20 % canvas, 80 % creator.
+        uint256 tokenFee = (amountIn - fee) * 30_000 / 1_000_000;
+        assertEq(hook.canvasPending(0) - canvas0, tokenFee * 2_000 / 10_000);
+        assertEq(hook.creatorOwed(launchWallet) - creator0, tokenFee - tokenFee * 2_000 / 10_000);
+
+        // Sell everything through the Programmable route: fee on the gross ETH output.
+        vm.startPrank(trader);
+        clover.approve(PERMIT2, type(uint256).max);
+        IPermit2(PERMIT2).approve(token, PROGRAMMABLE_SWAP_ROUTER, type(uint160).max, uint48(block.timestamp + 1 hours));
+        vm.stopPrank();
+        r0 = PLATFORM_RECIPIENT.balance;
+        plat0 = hook.platformAccrued();
+        t0 = trader.balance;
+        vm.recordLogs();
+        {
+            bytes[] memory inputs = new bytes[](3);
+            inputs[0] = _v4Input(key, false, uint128(bought), token, address(0), 0x0e, ADDRESS_THIS);
+            inputs[1] = abi.encode(address(0), PLATFORM_RECIPIENT, ROUTED_FEE_BPS);
+            inputs[2] = abi.encode(address(0), MSG_SENDER, uint256(0));
+            vm.prank(trader);
+            IUniversalRouter(PROGRAMMABLE_SWAP_ROUTER).execute(hex"100604", inputs, block.timestamp);
+        }
+        uint256 grossOut = _sellGrossToTaker(vm.getRecordedLogs(), hook);
+        uint256 sellFee = PLATFORM_RECIPIENT.balance - r0;
+        emit log_named_uint("routed sell CLOVER in", bought);
+        emit log_named_uint("routed sell gross ETH output credit wei", grossOut);
+        emit log_named_uint("routed sell Programmable recipient delta wei", sellFee);
+        emit log_named_uint("routed sell hook platformAccrued delta wei", hook.platformAccrued() - plat0);
+        emit log_named_uint("routed sell trader ETH received wei", trader.balance - t0);
+        assertEq(clover.balanceOf(trader), 0);
+        assertEq(sellFee, grossOut * ROUTED_FEE_BPS / 10_000, "routed sell: 30 bps of gross output once");
+        assertEq(trader.balance - t0, grossOut - sellFee);
+        assertEq(hook.platformAccrued(), plat0, "routed sell: no second platform fee");
         hook.flush(0);
         assertEq(hook.canvasPending(0), 0);
+    }
 
-        // Sell: exact input, Permit2 allowance, empty hookData.
-        vm.startPrank(trader);
-        pxa.approve(PERMIT2, type(uint256).max);
-        IPermit2(PERMIT2).approve(address(pxa), UNIVERSAL_ROUTER, type(uint160).max, uint48(block.timestamp + 1 hours));
-        uint256 eth0 = trader.balance;
-        g0 = gasleft();
-        IUniversalRouter(UNIVERSAL_ROUTER).execute(hex"10", _v4ExactInSingle(key, false, uint128(bought)), block.timestamp);
-        emit log_named_uint("gas UR sell exact-in", g0 - gasleft());
-        vm.stopPrank();
-        assertGt(trader.balance, eth0);
-        assertEq(pxa.balanceOf(trader), 0);
+    /// @dev ETH credited to the router by the pool on the sell = hook FeeTaken gross minus the CLOVER fee.
+    function _sellGrossToTaker(Vm.Log[] memory logs, CloverHook hook) internal pure returns (uint256) {
+        bytes32 topic = keccak256("FeeTaken(bytes32,address,bool,uint256,uint256,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(hook) && logs[i].topics[0] == topic) {
+                (bool isBuy, uint256 gross, uint256 platform, uint256 tokenFee) =
+                    abi.decode(logs[i].data, (bool, uint256, uint256, uint256));
+                require(!isBuy, "sell expected");
+                return gross - platform - tokenFee;
+            }
+        }
+        revert("FeeTaken not found");
+    }
 
-        // Platform claim pays the manifest recipient.
+    /// @notice A trade outside the Programmable route (canonical Uniswap Universal Router) pays the CLOVER fee
+    ///         only: neither the route nor the hook charges a platform fee on the Genesis pool.
+    function _externalSwapNoSecondFee(Prepared memory p) internal {
+        PoolKey memory key = p.stampRequest.poolKey;
+        CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        vm.deal(trader, 1 ether);
         uint256 r0 = PLATFORM_RECIPIENT.balance;
-        uint256 accrued = hook.platformAccrued();
-        hook.claimPlatform();
-        assertEq(PLATFORM_RECIPIENT.balance - r0, accrued);
+        uint256 plat0 = hook.platformAccrued();
+        vm.prank(trader);
+        IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 0.5 ether}(
+            hex"10", _v4ExactInSingle(key, true, 0.5 ether), block.timestamp
+        );
+        assertEq(PLATFORM_RECIPIENT.balance, r0);
+        assertEq(hook.platformAccrued(), plat0);
     }
 
     function _childLaunch(Prepared memory p) internal {
@@ -233,12 +315,38 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         assertEq(idx, 1);
         assertEq(canvasId, 1);
         assertGt(CloverToken(token).balanceOf(trader), 0);
-        // Child token can be bought through the Universal Router too.
+        // Child pools are not Programmable launches: the hook charges the 30 bps itself, claimable to the recipient.
+        CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        uint256 plat0 = hook.platformAccrued();
         vm.deal(trader, 1 ether);
         vm.prank(trader);
         IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 0.5 ether}(
             hex"10", _v4ExactInSingle(lp.poolKeyOf(token), true, 0.5 ether), block.timestamp
         );
+        assertEq(hook.platformAccrued() - plat0, 0.0015 ether);
+        uint256 r0 = PLATFORM_RECIPIENT.balance;
+        uint256 accrued = hook.platformAccrued();
+        hook.claimPlatform();
+        assertEq(PLATFORM_RECIPIENT.balance - r0, accrued);
+    }
+
+    /// @dev V4_SWAP input: SWAP_EXACT_IN_SINGLE (0x06), SETTLE_ALL (0x0c), then TAKE_ALL (0x0f, min 0) or
+    ///      TAKE (0x0e, full open delta to `takeTo`).
+    function _v4Input(
+        PoolKey memory key,
+        bool zeroForOne,
+        uint128 amountIn,
+        address inCur,
+        address outCur,
+        uint8 takeAction,
+        address takeTo
+    ) internal pure returns (bytes memory) {
+        bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), takeAction);
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(ExactInputSingleParams(key, zeroForOne, amountIn, 0, ""));
+        params[1] = abi.encode(inCur, uint256(amountIn));
+        params[2] = takeAction == 0x0f ? abi.encode(outCur, uint256(0)) : abi.encode(outCur, takeTo, uint256(0));
+        return abi.encode(actions, params);
     }
 
     /// @dev V4_SWAP input: actions SWAP_EXACT_IN_SINGLE (0x06), SETTLE_ALL (0x0c), TAKE_ALL (0x0f).

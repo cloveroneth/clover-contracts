@@ -18,12 +18,18 @@ import {CloverCanvas} from "./CloverCanvas.sol";
 /// - Asset: native ETH only (`currency0 == address(0)`).
 /// - Base: gross ETH amount of the trade. Buy: ETH paid by the trader, fees included.
 ///   Sell: ETH leaving the pool, before fees.
-/// - Rates in hundredths of a bip (denominator 1_000_000). Programmable platform fee: 3_000 (30 bps),
-///   never derived from `PoolKey.fee` (which is 0). Token fee: 1 to 10 %, set at launch.
-/// - Rounding: on the same base, the platform fee is rounded up once per trade and the token fee is floored.
+/// - Rates in hundredths of a bip (denominator 1_000_000), never derived from `PoolKey.fee` (which is 0).
+///   Token fee: 1 to 10 %, set at launch.
+/// - Programmable platform fee, one collection path per pool:
+///   * Genesis pool ($CLOVER, tokenIndex 0, the Programmable-stamped launch): the hook charges NO platform
+///     fee. Programmable collects its routed fee (30 bps of the native ETH leg) itself on trades routed
+///     through programmable.market; the Launchpad pays the same 30 bps on the Genesis initial buy.
+///   * Pools created later by the Launchpad (not stamped, never routed by Programmable): the hook charges
+///     3_000 (30 bps), rounded up once per trade, accrued in `platformAccrued`.
+/// - Rounding: on the same base, the platform fee is rounded up and the token fee is floored.
 /// - Accounting: the hook takes `platform + token fee` from the PoolManager with `take` during the swap.
-///   `platform` accrues in `platformAccrued`. The token fee is split: `canvasShareBps` accrues for the
-///   token's canvas (sent by the permissionless `flush`), the rest is owed to the token creator.
+///   The token fee is split: `canvasShareBps` accrues for the token's canvas (sent by the permissionless
+///   `flush`), the rest is owed to the token creator.
 /// - Recipient and claim path: `claimPlatform()` is permissionless and always pays the immutable
 ///   `PLATFORM_RECIPIENT`, read from the Programmable manifest when the deployment is prepared.
 contract CloverHook is IHooks {
@@ -33,8 +39,10 @@ contract CloverHook is IHooks {
 
     uint256 public constant PIPS = 1_000_000;
     uint256 public constant BPS = 10_000;
-    /// @notice Programmable platform fee: 30 bps.
+    /// @notice Programmable platform fee charged by the hook on non-Genesis pools: 30 bps.
     uint24 public constant PLATFORM_FEE_PIPS = 3_000;
+    /// @notice The Genesis pool, whose platform fee is collected by the Programmable route instead.
+    uint256 public constant GENESIS_TOKEN_INDEX = 0;
     uint24 public constant MIN_TOKEN_FEE_PIPS = 10_000;
     uint24 public constant MAX_TOKEN_FEE_PIPS = 100_000;
     uint16 public constant MIN_CANVAS_SHARE_BPS = 2_000;
@@ -58,6 +66,7 @@ contract CloverHook is IHooks {
     struct PoolConfig {
         uint32 tokenIndex;
         uint24 tokenFeePips;
+        uint24 platformFeePips;
         bool registered;
     }
 
@@ -176,7 +185,12 @@ contract CloverHook is IHooks {
             tokenFeePips < MIN_TOKEN_FEE_PIPS || tokenFeePips > MAX_TOKEN_FEE_PIPS
                 || canvasShareBps < MIN_CANVAS_SHARE_BPS || canvasShareBps > BPS
         ) revert InvalidFee();
-        poolConfig[id] = PoolConfig({tokenIndex: uint32(tokenIndex), tokenFeePips: tokenFeePips, registered: true});
+        poolConfig[id] = PoolConfig({
+            tokenIndex: uint32(tokenIndex),
+            tokenFeePips: tokenFeePips,
+            platformFeePips: tokenIndex == GENESIS_TOKEN_INDEX ? 0 : PLATFORM_FEE_PIPS,
+            registered: true
+        });
         tokenConfig[tokenIndex] =
             TokenConfig({creator: creator, canvasId: uint32(canvasId), canvasShareBps: canvasShareBps, lastDecrease: 0});
         emit PoolRegistered(id, tokenIndex, creator, canvasId, tokenFeePips, canvasShareBps);
@@ -235,8 +249,9 @@ contract CloverHook is IHooks {
 
     /// @notice Fee components for a gross ETH amount, as charged by the hook.
     function quoteFee(PoolId id, uint256 gross) external view returns (uint256 platform, uint256 tokenFee) {
-        platform = (gross * PLATFORM_FEE_PIPS + PIPS - 1) / PIPS;
-        tokenFee = gross * poolConfig[id].tokenFeePips / PIPS;
+        PoolConfig memory cfg = poolConfig[id];
+        platform = (gross * cfg.platformFeePips + PIPS - 1) / PIPS;
+        tokenFee = gross * cfg.tokenFeePips / PIPS;
     }
 
     // ---------------------------------------------------------------- hook callbacks
@@ -361,19 +376,19 @@ contract CloverHook is IHooks {
     }
 
     function _rate(PoolConfig memory cfg) private pure returns (uint256) {
-        return uint256(PLATFORM_FEE_PIPS) + cfg.tokenFeePips;
+        return uint256(cfg.platformFeePips) + cfg.tokenFeePips;
     }
 
     function _charge(PoolId id, PoolConfig memory cfg, address sender, bool isBuy, uint256 gross)
         private
         returns (uint256 fee)
     {
-        uint256 platform = (gross * PLATFORM_FEE_PIPS + PIPS - 1) / PIPS;
+        uint256 platform = (gross * cfg.platformFeePips + PIPS - 1) / PIPS;
         uint256 tokenFee = gross * cfg.tokenFeePips / PIPS;
         fee = platform + tokenFee;
         if (fee == 0) return 0;
 
-        platformAccrued += platform;
+        if (platform != 0) platformAccrued += platform;
         if (tokenFee != 0) {
             TokenConfig storage t = tokenConfig[cfg.tokenIndex];
             uint256 toCanvas = tokenFee * t.canvasShareBps / BPS;
