@@ -6,6 +6,8 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {CloverHook} from "../src/CloverHook.sol";
 import {Launchpad} from "../src/Launchpad.sol";
+import {EthereumNativeFeeVaultV3} from "../src/programmable/EthereumNativeFeeVaultV3.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract CloverHookTest is Base {
     using PoolIdLibrary for PoolKey;
@@ -23,24 +25,11 @@ contract CloverHookTest is Base {
         assertGt(clover.balanceOf(creator), 0);
     }
 
-    function test_GenesisInitialBuyPaysPlatformOnce() public view {
-        // 0.1 ETH initial buy: 30 bps floored, paid atomically to the Programmable recipient.
-        assertEq(platform.balance, 0.1 ether * 30 / 10_000);
-        // The hook charged no platform fee on the Genesis pool.
-        assertEq(hook.platformAccrued(), 0);
-        // The pool received the rest: its 5 % token fee is on 0.0997 ETH.
-        assertEq(hook.canvasPending(0), 0.0997 ether * 50_000 / 1_000_000);
-    }
-
     function test_BuyFeeSplit() public {
         uint256 pendingBefore = hook.canvasPending(0);
         uint256 platformBefore = hook.platformAccrued();
         buyExactIn(alice, cloverKey, 1 ether);
-        // Genesis pool: no hook platform fee (Programmable collects on its route).
-        assertEq(hook.platformAccrued() - platformBefore, 0);
-        (uint256 qp, uint256 qt) = hook.quoteFee(cloverKey.toId(), 1 ether);
-        assertEq(qp, 0);
-        assertEq(qt, 0.05 ether);
+        assertEq(hook.platformAccrued() - platformBefore, 0.003 ether);
         assertEq(hook.canvasPending(0) - pendingBefore, 0.05 ether); // 5 % token fee, 100 % to the canvas
         assertEq(hook.creatorOwed(creator), 0);
     }
@@ -67,14 +56,47 @@ contract CloverHookTest is Base {
         assertApproxEqAbs(canvas.pixel(pid(0, 0)).pendingRewards, pending / 144, 1);
     }
 
-    function test_PlatformClaimChildPool() public {
-        (,,, PoolKey memory key) = launchChild(alice, 300, 5_000, 0);
+    function test_PlatformClaim() public {
+        buyExactIn(alice, cloverKey, 1 ether);
+        EthereumNativeFeeVaultV3 vault = hook.feeVault();
+        uint256 accrued = vault.platformAccrued();
+        // Backed by PoolManager native claims held by the vault.
+        assertEq(manager.balanceOf(address(vault), 0), accrued);
         uint256 before = platform.balance;
-        buyExactIn(bob, key, 1 ether);
-        assertEq(hook.platformAccrued(), 0.003 ether);
-        hook.claimPlatform();
-        assertEq(platform.balance - before, 0.003 ether);
-        assertEq(hook.platformAccrued(), 0);
+        vault.claimPlatform();
+        assertEq(platform.balance - before, accrued);
+        assertEq(vault.platformAccrued(), 0);
+        assertEq(manager.balanceOf(address(vault), 0), 0);
+    }
+
+    function test_GenesisInitialBuyPaysPlatform() public view {
+        // setUp's 0.1 ETH Genesis buy: ceil(0.1 ETH * 30 / 10000).
+        assertEq(hook.platformAccrued(), 0.0003 ether);
+        assertEq(hook.feeVault().kernel(), address(hook));
+        assertEq(hook.feeVault().PLATFORM_RECIPIENT(), platform);
+    }
+
+    function test_SellPaysPlatform() public {
+        buyExactIn(alice, cloverKey, 1 ether);
+        uint256 before = hook.platformAccrued();
+        vm.recordLogs();
+        sellExactIn(alice, cloverKey, clover.balanceOf(alice));
+        uint256 delta = hook.platformAccrued() - before;
+        assertGt(delta, 0);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = keccak256("FeeTaken(bytes32,address,bool,uint256,uint256,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != topic) continue;
+            (, uint256 gross, uint256 plat,) = abi.decode(logs[i].data, (bool, uint256, uint256, uint256));
+            assertEq(plat, (gross * 30 + 9_999) / 10_000);
+            assertEq(delta, plat);
+        }
+    }
+
+    function test_FeeVaultOnlyKernel() public {
+        EthereumNativeFeeVaultV3 vault = hook.feeVault();
+        vm.expectRevert(EthereumNativeFeeVaultV3.UnauthorizedKernel.selector);
+        vault.recordFees(1, 0);
     }
 
     function test_ChildLaunch() public {

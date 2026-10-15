@@ -23,7 +23,7 @@ abstract contract Base is Test {
     TestSwapRouter internal router;
     PoolKey internal cloverKey;
 
-    address internal platform = makeAddr("programmable");
+    address internal platform = 0xD88539d3c4C460136a733A3Fd60cf6BF269079da;
     address internal protocol = makeAddr("protocol");
     address internal creator = makeAddr("creator");
     address internal alice = makeAddr("alice");
@@ -41,9 +41,14 @@ abstract contract Base is Test {
         // Mainnet PoolManager holds native ETH from other pools; hooks `take` before the trader settles.
         vm.deal(address(manager), 10_000 ether);
 
-        address hookAddr = address((uint160(uint256(keccak256("clover.hook"))) & ~uint160(0x3FFF)) | HOOK_FLAGS);
-        deployCodeTo("CloverHook.sol:CloverHook", abi.encode(manager, platform), hookAddr);
-        hook = CloverHook(payable(hookAddr));
+        // CREATE2 salt mining (not etching): the hook's constructor creates its fee vault with kernel = hook.
+        bytes32 initHash = keccak256(abi.encodePacked(type(CloverHook).creationCode, abi.encode(manager, platform)));
+        uint256 salt;
+        while (
+            uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), bytes32(salt), initHash))))
+                & 0x3FFF != HOOK_FLAGS
+        ) ++salt;
+        hook = new CloverHook{salt: bytes32(salt)}(manager, platform);
 
         canvas = new CloverCanvas(protocol);
         launchpad = new Launchpad(

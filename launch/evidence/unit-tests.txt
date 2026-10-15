@@ -1,20 +1,22 @@
 No files changed, compilation skipped
 
-Ran 10 tests for test/CloverHook.t.sol:CloverHookTest
-[PASS] test_BuyFeeSplit() (gas: 154981)
-[PASS] test_CanvasShareRules() (gas: 1276296)
-[PASS] test_ChildLaunch() (gas: 1516017)
-[PASS] test_FlushRewardsHolders() (gas: 419231)
-[PASS] test_GenesisInitialBuyPaysPlatformOnce() (gas: 15359)
-[PASS] test_GenesisOnlyOnce() (gas: 17718)
-[PASS] test_GenesisPool() (gas: 38681)
-[PASS] test_LaunchValidation() (gas: 856441)
-[PASS] test_PlatformClaimChildPool() (gas: 1443394)
-[PASS] test_SellFeeAndFlush() (gas: 322998)
-Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 5.17ms (13.42ms CPU time)
+Ran 12 tests for test/CloverHook.t.sol:CloverHookTest
+[PASS] test_BuyFeeSplit() (gas: 175644)
+[PASS] test_CanvasShareRules() (gas: 1275897)
+[PASS] test_ChildLaunch() (gas: 1526566)
+[PASS] test_FeeVaultOnlyKernel() (gas: 11708)
+[PASS] test_FlushRewardsHolders() (gas: 443982)
+[PASS] test_GenesisInitialBuyPaysPlatform() (gas: 16168)
+[PASS] test_GenesisOnlyOnce() (gas: 17761)
+[PASS] test_GenesisPool() (gas: 38724)
+[PASS] test_LaunchValidation() (gas: 856435)
+[PASS] test_PlatformClaim() (gas: 218818)
+[PASS] test_SellFeeAndFlush() (gas: 354651)
+[PASS] test_SellPaysPlatform() (gas: 240626)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 7.62ms (12.15ms CPU time)
 
 Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
-[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4078974, ~: 4080654)
+[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4091623, ~: 4102517)
 [PASS] test_CaptureHeldSplitAndRefund() (gas: 305333)
 [PASS] test_CollectClaimsAndWithdraws() (gas: 314331)
 [PASS] test_CooldownAndGuards() (gas: 303011)
@@ -25,9 +27,9 @@ Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
 [PASS] test_GenesisCanvas() (gas: 2315564)
 [PASS] test_HolderActions() (gas: 306610)
 [PASS] test_OnlyLaunchpadCreatesTokenCanvases() (gas: 13594)
-[PASS] test_Profile() (gas: 46961)
+[PASS] test_Profile() (gas: 46917)
 [PASS] test_ReleaseThenReopen() (gas: 289221)
 [PASS] test_TransferPaysSenderRewards() (gas: 348314)
-Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 402.86ms (412.21ms CPU time)
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 404.47ms (414.94ms CPU time)
 
-Ran 2 test suites in 404.18ms (408.03ms CPU time): 24 tests passed, 0 failed, 0 skipped (24 total tests)
+Ran 2 test suites in 405.95ms (412.09ms CPU time): 26 tests passed, 0 failed, 0 skipped (26 total tests)

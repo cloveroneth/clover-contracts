@@ -12,6 +12,7 @@ cbor_metadata = false
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "v4-core/=lib/v4-core/src/",
+  "@uniswap/v4-core/src/=lib/v4-core/src/",
   "forge-std/=lib/forge-std/src/",
   "solmate/=lib/solmate/",
 ]

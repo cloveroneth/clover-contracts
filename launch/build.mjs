@@ -32,6 +32,7 @@ const REMAPPINGS = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "solmate/=lib/solmate/",
   "v4-core/=lib/v4-core/src/",
+  "@uniswap/v4-core/src/=lib/v4-core/src/",
 ];
 const ENTRYPOINTS = ["src/CloverCanvas.sol", "src/CloverHook.sol", "src/CloverToken.sol", "src/Launchpad.sol"];
 
