@@ -10,14 +10,21 @@
     "rentBps": 500,
     "fadeTimeSeconds": 259200,
     "startPriceWei": "2000000000000000",
-    "exemptWallets": []
+    "exemptWallets": [
+      "0x8225ad47743a7d863c74ae3d6c910260247dede4",
+      "0x8595fc25de10640e88e753bf64b26dfa0bf6e2e8",
+      "0x4fcaacae3674cbf6791a4157064a0d77e6ff153d",
+      "0x6400f592f5f436a04e448d5460ce6da2cbba7041",
+      "0x09e536afe5c85dbee378e0daa25f352e1fafebc0",
+      "0x367878a462c2cf7fb10737782e03887e555fea77"
+    ]
   },
   "token": {
     "name": "CLOVER",
     "symbol": "CLOVER"
   },
   "presentation": {
-    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3.3% fee on every trade, enforced in the pool whatever the router: 0.3% Programmable platform fee plus a 3% CLOVER fee (20% to the Genesis canvas, 80% to the creator). Anti-snipe at launch: buy fee starting at 99% and decaying to 3.3% over 30 seconds, and buys capped at 2% of the supply per wallet for 5 minutes. Starting FDV about 8 ETH.",
+    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3.3% fee on every trade, enforced in the pool whatever the router: 0.3% Programmable platform fee plus a 3% CLOVER fee (20% to the Genesis canvas, 80% to the creator). Anti-snipe at launch: buy fee starting at 99% and decaying to 3.3% over 30 seconds, and buys capped at 2% of the supply per wallet for 5 minutes. Starting FDV about $15,000 (6.2 ETH).",
     "image": {
       "sourcePath": "assets/clover-logo.png",
       "uri": "https://cloverpixel.xyz/logo.png"

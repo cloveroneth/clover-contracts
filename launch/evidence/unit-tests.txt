@@ -1,32 +1,32 @@
-Compiling 98 files with Solc 0.8.26
-Solc 0.8.26 finished in 4.48s
+Compiling 4 files with Solc 0.8.26
+Solc 0.8.26 finished in 4.32s
 Compiler run successful!
 
 Ran 20 tests for test/CloverHook.t.sol:CloverHookTest
-[PASS] test_BuyFeeSplit() (gas: 181237)
-[PASS] test_CanvasShareRules() (gas: 1303823)
-[PASS] test_ChildLaunch() (gas: 1582935)
+[PASS] test_BuyFeeSplit() (gas: 181209)
+[PASS] test_CanvasShareRules() (gas: 1303879)
+[PASS] test_ChildLaunch() (gas: 1583856)
 [PASS] test_FeeVaultOnlyKernel() (gas: 13829)
-[PASS] test_FlushRewardsHolders() (gas: 448654)
+[PASS] test_FlushRewardsHolders() (gas: 448683)
 [PASS] test_GenesisInitialBuyPaysPlatform() (gas: 18434)
 [PASS] test_GenesisOnlyOnce() (gas: 17795)
 [PASS] test_GenesisOpeningConfig() (gas: 37010)
 [PASS] test_GenesisPool() (gas: 38788)
 [PASS] test_LaunchValidation() (gas: 858327)
-[PASS] test_OpeningBuyLimit() (gas: 1827993)
-[PASS] test_OpeningDevBuyAboveLimitReverts() (gas: 2634203)
-[PASS] test_OpeningExemptWallets() (gas: 2499162)
-[PASS] test_OpeningFeeDecay() (gas: 1686190)
-[PASS] test_OpeningFeeExactOutBuy() (gas: 1499164)
-[PASS] test_OpeningFeeSellsUnaffected() (gas: 1587267)
+[PASS] test_OpeningBuyLimit() (gas: 1828133)
+[PASS] test_OpeningDevBuyAboveLimitReverts() (gas: 2634344)
+[PASS] test_OpeningExemptWallets() (gas: 2497393)
+[PASS] test_OpeningFeeDecay() (gas: 1685368)
+[PASS] test_OpeningFeeExactOutBuy() (gas: 1499248)
+[PASS] test_OpeningFeeSellsUnaffected() (gas: 1587379)
 [PASS] test_OpeningTooManyExempt() (gas: 860153)
-[PASS] test_PlatformClaim() (gas: 224336)
-[PASS] test_SellFeeAndFlush() (gas: 361775)
-[PASS] test_SellPaysPlatform() (gas: 247304)
-Suite result: ok. 20 passed; 0 failed; 0 skipped; finished in 22.03ms (22.26ms CPU time)
+[PASS] test_PlatformClaim() (gas: 224308)
+[PASS] test_SellFeeAndFlush() (gas: 361789)
+[PASS] test_SellPaysPlatform() (gas: 247234)
+Suite result: ok. 20 passed; 0 failed; 0 skipped; finished in 21.53ms (26.96ms CPU time)
 
 Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
-[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4081118, ~: 4087084)
+[PASS] testFuzz_Solvency(uint256) (runs: 512, μ: 4080191, ~: 4075915)
 [PASS] test_CaptureHeldSplitAndRefund() (gas: 305333)
 [PASS] test_CollectClaimsAndWithdraws() (gas: 314331)
 [PASS] test_CooldownAndGuards() (gas: 303011)
@@ -40,6 +40,6 @@ Ran 14 tests for test/CloverCanvas.t.sol:CloverCanvasTest
 [PASS] test_Profile() (gas: 46917)
 [PASS] test_ReleaseThenReopen() (gas: 289221)
 [PASS] test_TransferPaysSenderRewards() (gas: 348314)
-Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 413.65ms (405.84ms CPU time)
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 401.93ms (389.26ms CPU time)
 
-Ran 2 test suites in 414.88ms (435.68ms CPU time): 34 tests passed, 0 failed, 0 skipped (34 total tests)
+Ran 2 test suites in 403.61ms (423.47ms CPU time): 34 tests passed, 0 failed, 0 skipped (34 total tests)

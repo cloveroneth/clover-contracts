@@ -24,7 +24,7 @@ import {CloverCanvas} from "./CloverCanvas.sol";
 ///         locked single-sided liquidity, canvas, and the creator's optional first buy.
 ///
 /// Liquidity: 100 % of the supply in one position [TICK_LOWER, TICK_UPPER] owned by this contract.
-/// The pool starts at TICK_UPPER, so the position holds only the token. Starting FDV is about 8 ETH.
+/// The pool starts at TICK_UPPER, so the position holds only the token. Starting FDV is about 6.2 ETH.
 /// Opening protection (enforced by the hook, see CloverHook): 99 % buy fee decaying over 30 s, 2 % per-wallet
 /// buy limit for 300 s; the creator and up to 6 wallets chosen at launch skip the opening fee.
 /// There is no function that removes liquidity: it is locked forever.
@@ -37,8 +37,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     /// @notice Paid on every launch, into the Genesis canvas rewards.
     uint256 public constant LAUNCH_FEE = 0.01 ether;
     int24 public constant TICK_SPACING = 200;
-    /// @dev floor(log_1.0001(1e9 / 8) / 200) * 200: starting FDV ~8.04 ETH (over $15,000).
-    int24 public constant TICK_UPPER = 186_400;
+    /// @dev floor(log_1.0001(1e9 / 6.194) / 200) * 200: starting FDV ~6.198 ETH (~$15,000 at launch).
+    int24 public constant TICK_UPPER = 189_000;
     /// @dev ceil(MIN_TICK / 200) * 200.
     int24 public constant TICK_LOWER = -887_200;
 

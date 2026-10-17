@@ -1,14 +1,14 @@
-Compiling 3 files with Solc 0.8.26
-Solc 0.8.26 finished in 3.42s
+Compiling 2 files with Solc 0.8.26
+Solc 0.8.26 finished in 3.28s
 Compiler run successful!
 
 Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
 [PASS] test_fork_bindingsMatchManifest() (gas: 17282)
-[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 29448418)
+[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 30495826)
 Logs:
-  hook salt iterations: 190
-  hook: 0x61CA4256D0DecbFBc2520cF2502D0e9d425c68Cc
-  CLOVER: 0x1951FD5Ff90534e99D53640fAC023e2A682cc655
+  hook salt iterations: 3254
+  hook: 0x9aB5D5C0312bd76478d2F4348036BeDd71cf28Cc
+  CLOVER: 0x4652e3979A8348551C1D1dffa5a99E1ABe97Af43
   initial buy gross wei: 50000000000000000
   initial buy platformAccrued delta wei: 150000000000000
   initial buy vault PoolManager native claims wei: 150000000000000
@@ -39,14 +39,14 @@ Logs:
     vault backing delta wei: 30000000000000
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | buy exact-out
-    gross native wei: 6785606039319462
-    platformAccrued delta wei: 20356818117959
-    vault backing delta wei: 20356818117959
+    gross native wei: 6937271740790582
+    platformAccrued delta wei: 20811815222372
+    vault backing delta wei: 20811815222372
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-in
-    gross native wei: 16385475305271441
-    platformAccrued delta wei: 49156425915815
-    vault backing delta wei: 49156425915815
+    gross native wei: 16745986612426285
+    platformAccrued delta wei: 50237959837279
+    vault backing delta wei: 50237959837279
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-out
     gross native wei: 1292657704239917
@@ -59,14 +59,14 @@ Logs:
     vault backing delta wei: 3000000000000000
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | buy exact-out
-    gross native wei: 291245610105907443
-    platformAccrued delta wei: 873736830317723
-    vault backing delta wei: 873736830317723
+    gross native wei: 301945658134721509
+    platformAccrued delta wei: 905836974404165
+    vault backing delta wei: 905836974404165
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-in
-    gross native wei: 675134194846904979
-    platformAccrued delta wei: 2025402584540715
-    vault backing delta wei: 2025402584540715
+    gross native wei: 692159797153114727
+    platformAccrued delta wei: 2076479391459345
+    vault backing delta wei: 2076479391459345
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-out
     gross native wei: 129265770423991726
@@ -79,14 +79,14 @@ Logs:
     vault backing delta wei: 30000000000000
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | buy exact-out
-    gross native wei: 129624348154774147
-    platformAccrued delta wei: 388873044464323
-    vault backing delta wei: 388873044464323
+    gross native wei: 130024907186866730
+    platformAccrued delta wei: 390074721560601
+    vault backing delta wei: 390074721560601
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-in
-    gross native wei: 307078638657324924
-    platformAccrued delta wei: 921235915971975
-    vault backing delta wei: 921235915971975
+    gross native wei: 306455511564159262
+    platformAccrued delta wei: 919366534692478
+    vault backing delta wei: 919366534692478
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-out
     gross native wei: 1292657704239917
@@ -99,14 +99,14 @@ Logs:
     vault backing delta wei: 3000000000000000
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | buy exact-out
-    gross native wei: 385227235834120382
-    platformAccrued delta wei: 1155681707502362
-    vault backing delta wei: 1155681707502362
+    gross native wei: 400706888211242458
+    platformAccrued delta wei: 1202120664633728
+    vault backing delta wei: 1202120664633728
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-in
-    gross native wei: 882977192391482782
-    platformAccrued delta wei: 2648931577174449
-    vault backing delta wei: 2648931577174449
+    gross native wei: 905890885078857841
+    platformAccrued delta wei: 2717672655236574
+    vault backing delta wei: 2717672655236574
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-out
     gross native wei: 129265770423991726
@@ -118,9 +118,9 @@ Logs:
     platformAccrued delta wei: 900000000000000
     vault backing delta wei: 900000000000000
     recipient ETH delta (route charge) wei: 0
-  claimPlatform paid to 0xD885...79da wei: 17626725472774713
-  gas child launch: 1301933
+  claimPlatform paid to 0xD885...79da wei: 17825951285815934
+  gas child launch: 1301989
 
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.15s (3.10s CPU time)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.67s (3.63s CPU time)
 
-Ran 1 test suite in 3.16s (3.15s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Ran 1 test suite in 3.67s (3.67s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

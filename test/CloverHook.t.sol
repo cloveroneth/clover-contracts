@@ -278,7 +278,7 @@ contract CloverHookTest is Base {
         ex[0] = bob;
         (,,, PoolKey memory key) = launchChildAt(alice, 300, 5_000, 0, ex);
         uint256 t0 = block.timestamp;
-        // Exempt wallets keep the 2 % limit: ~0.17 ETH at the start, 0.5 ETH is above it.
+        // Exempt wallets keep the 2 % limit: ~0.13 ETH at the start, 0.5 ETH is above it.
         vm.prank(bob, bob);
         vm.expectRevert();
         router.swap{value: 0.5 ether}(key, true, -0.5 ether);
@@ -308,7 +308,7 @@ contract CloverHookTest is Base {
         assertTrue(hook.openingExempt(0, bob));
         assertEq(launchpad.genesisExemptWallets().length, 1);
         assertEq(launchpad.genesisExemptWallets()[0], bob);
-        // Starting FDV ~8 ETH: 0.1 ETH dev buy stays under 2 % of the supply.
+        // Starting FDV ~6.2 ETH: 0.1 ETH dev buy stays under 2 % of the supply.
         assertLt(clover.balanceOf(creator), hook.OPENING_MAX_BUY());
     }
 

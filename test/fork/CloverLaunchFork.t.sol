@@ -219,7 +219,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         _openingBuy(p, trader, 0.01 ether, 990_000 - (990_000 - 33_000) * 15 / 30, "  t+15s non-exempt");
         _openingBuy(p, exemptWallet, 0.01 ether, 33_000, "  t+15s exempt wallet");
         _openingBuy(p, launchWallet, 0.01 ether, 33_000, "  t+15s creator");
-        // 2 % of the supply is ~0.17 ETH at the start; 0.5 ETH exceeds it, exempt or not.
+        // 2 % of the supply is ~0.13 ETH at the start; 0.5 ETH exceeds it, exempt or not.
         vm.deal(exemptWallet, 1 ether);
         vm.prank(exemptWallet, exemptWallet);
         vm.expectRevert();

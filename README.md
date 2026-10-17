@@ -56,7 +56,7 @@ Enforced by the hook on every pool, from the block that creates it:
 ## Liquidity
 
 `Launchpad` initializes each pool and adds the whole token supply as one single-sided position
-(ticks `-887200` to `186400`, spacing 200): starting FDV about 8 ETH (over $15,000). The position is owned by the Launchpad, which has no function
+(ticks `-887200` to `189000`, spacing 200): starting FDV about 6.2 ETH (~$15,000 at launch). The position is owned by the Launchpad, which has no function
 to remove it: the liquidity is permanent.
 
 ## Build and test
