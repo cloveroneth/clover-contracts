@@ -15,6 +15,9 @@ import {CloverCanvas} from "../../src/CloverCanvas.sol";
 import {Launchpad} from "../../src/Launchpad.sol";
 import {CloverToken} from "../../src/CloverToken.sol";
 import {EthereumNativeFeeVaultV3} from "../../src/programmable/EthereumNativeFeeVaultV3.sol";
+import {CloverLaunchProtection} from "../../src/CloverLaunchProtection.sol";
+import {CloverOpeningTaxVault} from "../../src/CloverOpeningTaxVault.sol";
+import {IAggregatorV3} from "../../src/Launchpad.sol";
 
 interface IUniversalRouter {
     function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline) external payable;
@@ -206,14 +209,19 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         assertEq(IPoolManager(POOL_MANAGER).balanceOf(address(vault), 0), expected, "backing");
     }
 
-    /// @notice Opening protection right after the launch transaction, through the canonical Uniswap UR:
-    ///         99 % buy fee decaying over 30 s (platform fee still ceil 30 bps of the gross), exempt wallets at the
-    ///         normal rate, 2 % per-wallet buy limit for 300 s even for exempt wallets.
+    /// @notice Opening protection right after the launch transaction, through the canonical Uniswap UR (an approved
+    ///         router; the buyer is its msgSender): 99 % buy fee decaying over 30 s with the surplus in the opening
+    ///         tax vault (platform fee still ceil 30 bps of the gross), exempt wallets at the normal rate, 2 % caps
+    ///         per buyer and per recipient for 300 s even for exempt wallets, other routers rejected for buys.
     function _openingProtection(Prepared memory p) internal {
         CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        CloverLaunchProtection protection = hook.protection();
         PoolKey memory key = p.stampRequest.poolKey;
         uint256 t0 = block.timestamp;
         emit log_string("opening protection");
+        Launchpad.TokenInfo memory info = Launchpad(p.accounts[T_LAUNCHPAD]).tokenInfo(0);
+        emit log_named_uint("  Chainlink ETH/USD (8 dec)", info.ethUsd);
+        emit log_named_int("  start tick", info.startTick);
         _openingBuy(p, trader, 0.01 ether, 990_000, "  t+0s non-exempt");
         vm.warp(t0 + 15);
         _openingBuy(p, trader, 0.01 ether, 990_000 - (990_000 - 33_000) * 15 / 30, "  t+15s non-exempt");
@@ -226,10 +234,15 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 0.5 ether}(
             hex"10", _v4ExactInSingle(key, true, 0.5 ether), block.timestamp
         );
-        assertLe(hook.openingBought(key.toId(), exemptWallet), hook.OPENING_MAX_BUY());
+        assertLe(protection.bought(0, exemptWallet), protection.OPENING_MAX());
+        assertLe(protection.received(0, exemptWallet), protection.OPENING_MAX());
         vm.warp(t0 + 30);
         _openingBuy(p, trader, 0.01 ether, 33_000, "  t+30s non-exempt");
-        // After 300 s the limit is gone.
+        // Opening tax custody, separate from the creator / canvas fee balances.
+        CloverOpeningTaxVault taxVault = hook.openingTaxVault();
+        emit log_named_uint("  opening tax vault accrued wei", taxVault.accrued(0));
+        assertEq(address(taxVault).balance, taxVault.totalAccrued());
+        // After 300 s the caps are gone.
         vm.warp(t0 + 300);
         vm.deal(exemptWallet, 1 ether);
         vm.prank(exemptWallet, exemptWallet);
@@ -241,6 +254,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
     function _openingBuy(Prepared memory p, address who, uint128 amount, uint256 ratePips, string memory label) internal {
         CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
         uint256 accrued0 = hook.platformAccrued();
+        uint256 tax0 = hook.openingTaxVault().accrued(0);
         vm.deal(who, who.balance + amount);
         vm.recordLogs();
         vm.prank(who, who);
@@ -252,13 +266,16 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != address(hook) || logs[i].topics[0] != topic) continue;
             (, uint256 gross, uint256 plat, uint256 tokenFee) = abi.decode(logs[i].data, (bool, uint256, uint256, uint256));
+            uint256 tax = hook.openingTaxVault().accrued(0) - tax0;
             emit log_string(label);
             emit log_named_uint("    total fee rate (pips)", ratePips);
             emit log_named_uint("    platform fee wei", plat);
             emit log_named_uint("    token fee wei", tokenFee);
+            emit log_named_uint("    opening tax wei (vault)", tax);
             assertEq(gross, amount);
             assertEq(plat, (gross * 30 + 9_999) / 10_000, "platform ceil 30 bps");
-            assertEq(tokenFee, gross * (ratePips - 3_000) / 1_000_000, "opening rate");
+            assertEq(tokenFee, gross * 30_000 / 1_000_000, "normal token fee");
+            assertEq(tax, gross * (ratePips - 33_000) / 1_000_000, "opening tax");
             assertEq(hook.platformAccrued() - accrued0, plat);
             return;
         }
@@ -430,6 +447,13 @@ contract CloverLaunchForkTest is Test, CloverGraph {
 
     function _childLaunch(Prepared memory p) internal {
         Launchpad lp = Launchpad(p.accounts[T_LAUNCHPAD]);
+        // Days were warped past the fork: the real feed is stale here, so report its last price as fresh.
+        (, int256 answer,,,) = lp.ETH_USD_FEED().latestRoundData();
+        vm.mockCall(
+            address(lp.ETH_USD_FEED()),
+            abi.encodeCall(IAggregatorV3.latestRoundData, ()),
+            abi.encode(uint80(1), answer, block.timestamp, block.timestamp, uint80(1))
+        );
         vm.deal(trader, 10 ether);
         uint256 value = lp.LAUNCH_FEE() + 0.1 ether;
         Launchpad.LaunchParams memory lp_ = Launchpad.LaunchParams({
@@ -454,7 +478,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         assertGt(CloverToken(token).balanceOf(trader), 0);
         // Child pools on the same hook pay the same pool-enforced 30 bps into the same vault.
         CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
-        vm.warp(block.timestamp + hook.OPENING_LIMIT_PERIOD());
+        vm.warp(block.timestamp + 300);
         uint256 plat0 = hook.platformAccrued();
         vm.deal(trader, 1 ether);
         vm.prank(trader);

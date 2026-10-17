@@ -12,6 +12,8 @@ import {TickMath} from "v4-core/libraries/TickMath.sol";
 /// @notice Minimal router for tests: any direction, exact-in or exact-out, empty hookData.
 contract TestSwapRouter is IUnlockCallback {
     IPoolManager public immutable manager;
+    /// @notice The account that called `swap`, during the swap (like the v4 periphery routers).
+    address public msgSender;
 
     struct Ctx {
         address payer;
@@ -30,9 +32,11 @@ contract TestSwapRouter is IUnlockCallback {
         payable
         returns (BalanceDelta delta)
     {
+        msgSender = msg.sender;
         delta = abi.decode(
             manager.unlock(abi.encode(Ctx(msg.sender, key, zeroForOne, amountSpecified))), (BalanceDelta)
         );
+        msgSender = address(0);
         uint256 leftover = address(this).balance;
         if (leftover != 0) {
             (bool ok,) = msg.sender.call{value: leftover}("");

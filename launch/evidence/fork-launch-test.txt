@@ -1,52 +1,60 @@
-Compiling 2 files with Solc 0.8.26
-Solc 0.8.26 finished in 3.28s
+Compiling 3 files with Solc 0.8.26
+Solc 0.8.26 finished in 3.52s
 Compiler run successful!
 
 Ran 2 tests for test/fork/CloverLaunchFork.t.sol:CloverLaunchForkTest
 [PASS] test_fork_bindingsMatchManifest() (gas: 17282)
-[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 30495826)
+[PASS] test_fork_launchAndStamp_thenPoolEnforcedPlatformFee() (gas: 37043015)
 Logs:
-  hook salt iterations: 3254
-  hook: 0x9aB5D5C0312bd76478d2F4348036BeDd71cf28Cc
-  CLOVER: 0x4652e3979A8348551C1D1dffa5a99E1ABe97Af43
+  hook salt iterations: 6486
+  hook: 0xba9f5dF604483e4342F24FfAF38C0745c3FcE8cc
+  CLOVER: 0x84ea25C23481Cd00f8Ae082e4fe12de6ae4E5464
   initial buy gross wei: 50000000000000000
   initial buy platformAccrued delta wei: 150000000000000
   initial buy vault PoolManager native claims wei: 150000000000000
   opening protection
+    Chainlink ETH/USD (8 dec): 240615005651
+    start tick: 188800
     t+0s non-exempt
       total fee rate (pips): 990000
       platform fee wei: 30000000000000
-      token fee wei: 9870000000000000
+      token fee wei: 300000000000000
+      opening tax wei (vault): 9570000000000000
     t+15s non-exempt
       total fee rate (pips): 511500
       platform fee wei: 30000000000000
-      token fee wei: 5085000000000000
+      token fee wei: 300000000000000
+      opening tax wei (vault): 4785000000000000
     t+15s exempt wallet
       total fee rate (pips): 33000
       platform fee wei: 30000000000000
       token fee wei: 300000000000000
+      opening tax wei (vault): 0
     t+15s creator
       total fee rate (pips): 33000
       platform fee wei: 30000000000000
       token fee wei: 300000000000000
+      opening tax wei (vault): 0
     t+30s non-exempt
       total fee rate (pips): 33000
       platform fee wei: 30000000000000
       token fee wei: 300000000000000
+      opening tax wei (vault): 0
+    opening tax vault accrued wei: 14355000000000000
   external Uniswap UR | buy exact-in
     gross native wei: 10000000000000000
     platformAccrued delta wei: 30000000000000
     vault backing delta wei: 30000000000000
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | buy exact-out
-    gross native wei: 6937271740790582
-    platformAccrued delta wei: 20811815222372
-    vault backing delta wei: 20811815222372
+    gross native wei: 6924080917288512
+    platformAccrued delta wei: 20772242751866
+    vault backing delta wei: 20772242751866
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-in
-    gross native wei: 16745986612426285
-    platformAccrued delta wei: 50237959837279
-    vault backing delta wei: 50237959837279
+    gross native wei: 16714640102173397
+    platformAccrued delta wei: 50143920306521
+    vault backing delta wei: 50143920306521
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-out
     gross native wei: 1292657704239917
@@ -59,14 +67,14 @@ Logs:
     vault backing delta wei: 3000000000000000
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | buy exact-out
-    gross native wei: 301945658134721509
-    platformAccrued delta wei: 905836974404165
-    vault backing delta wei: 905836974404165
+    gross native wei: 301028399482950991
+    platformAccrued delta wei: 903085198448853
+    vault backing delta wei: 903085198448853
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-in
-    gross native wei: 692159797153114727
-    platformAccrued delta wei: 2076479391459345
-    vault backing delta wei: 2076479391459345
+    gross native wei: 690709985192655358
+    platformAccrued delta wei: 2072129955577967
+    vault backing delta wei: 2072129955577967
     recipient ETH delta (route charge) wei: 0
   external Uniswap UR | sell exact-out
     gross native wei: 129265770423991726
@@ -79,14 +87,14 @@ Logs:
     vault backing delta wei: 30000000000000
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | buy exact-out
-    gross native wei: 130024907186866730
-    platformAccrued delta wei: 390074721560601
-    vault backing delta wei: 390074721560601
+    gross native wei: 129993257184108840
+    platformAccrued delta wei: 389979771552327
+    vault backing delta wei: 389979771552327
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-in
-    gross native wei: 306455511564159262
-    platformAccrued delta wei: 919366534692478
-    vault backing delta wei: 919366534692478
+    gross native wei: 306512259651842355
+    platformAccrued delta wei: 919536778955528
+    vault backing delta wei: 919536778955528
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-out
     gross native wei: 1292657704239917
@@ -99,14 +107,14 @@ Logs:
     vault backing delta wei: 3000000000000000
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | buy exact-out
-    gross native wei: 400706888211242458
-    platformAccrued delta wei: 1202120664633728
-    vault backing delta wei: 1202120664633728
+    gross native wei: 399385889755827790
+    platformAccrued delta wei: 1198157669267484
+    vault backing delta wei: 1198157669267484
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-in
-    gross native wei: 905890885078857841
-    platformAccrued delta wei: 2717672655236574
-    vault backing delta wei: 2717672655236574
+    gross native wei: 903952270407685439
+    platformAccrued delta wei: 2711856811223057
+    vault backing delta wei: 2711856811223057
     recipient ETH delta (route charge) wei: 0
   Programmable swap router | sell exact-out
     gross native wei: 129265770423991726
@@ -118,9 +126,9 @@ Logs:
     platformAccrued delta wei: 900000000000000
     vault backing delta wei: 900000000000000
     recipient ETH delta (route charge) wei: 0
-  claimPlatform paid to 0xD885...79da wei: 17825951285815934
-  gas child launch: 1301989
+  claimPlatform paid to 0xD885...79da wei: 17809012916852995
+  gas child launch: 1606793
 
-Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.67s (3.63s CPU time)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 3.72s (3.69s CPU time)
 
-Ran 1 test suite in 3.67s (3.67s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Ran 1 test suite in 3.73s (3.72s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

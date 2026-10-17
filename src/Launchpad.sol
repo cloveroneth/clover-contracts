@@ -15,18 +15,31 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {FullMath} from "v4-core/libraries/FullMath.sol";
 import {FixedPoint96} from "v4-core/libraries/FixedPoint96.sol";
-import {CloverToken} from "./CloverToken.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {CloverToken, ICloverTransferProtection} from "./CloverToken.sol";
 import {CloverHook} from "./CloverHook.sol";
 import {CloverCanvas} from "./CloverCanvas.sol";
+
+/// @dev Chainlink price feed (ETH / USD, 8 decimals on Ethereum mainnet).
+interface IAggregatorV3 {
+    function decimals() external view returns (uint8);
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+}
 
 /// @title Launchpad
 /// @notice Launches a token with its canvas in one transaction: token, ETH pool on the shared CloverHook,
 ///         locked single-sided liquidity, canvas, and the creator's optional first buy.
 ///
-/// Liquidity: 100 % of the supply in one position [TICK_LOWER, TICK_UPPER] owned by this contract.
-/// The pool starts at TICK_UPPER, so the position holds only the token. Starting FDV is about 6.2 ETH.
-/// Opening protection (enforced by the hook, see CloverHook): 99 % buy fee decaying over 30 s, 2 % per-wallet
-/// buy limit for 300 s; the creator and up to 6 wallets chosen at launch skip the opening fee.
+/// Liquidity: 100 % of the supply in one position [TICK_LOWER, startTick] owned by this contract.
+/// The pool starts at startTick, so the position holds only the token.
+/// Starting FDV: at least $15,000, enforced at launch with a fresh Chainlink ETH/USD price (`ETH_USD_FEED`,
+/// updated within the last hour): startTick is the highest tick on the 200 grid whose FDV is >= $15,000.
+/// Opening protection (CloverLaunchProtection, see CloverHook): 99 % buy fee decaying over 30 s, 2 % caps per
+/// authenticated buyer and per recipient for 300 s; the creator and up to 6 wallets chosen at launch skip the
+/// opening fee.
 /// There is no function that removes liquidity: it is locked forever.
 contract Launchpad is ReentrancyGuard, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
@@ -37,8 +50,10 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     /// @notice Paid on every launch, into the Genesis canvas rewards.
     uint256 public constant LAUNCH_FEE = 0.01 ether;
     int24 public constant TICK_SPACING = 200;
-    /// @dev floor(log_1.0001(1e9 / 6.194) / 200) * 200: starting FDV ~6.198 ETH (~$15,000 at launch).
-    int24 public constant TICK_UPPER = 189_000;
+    /// @notice Minimum starting FDV, in USD.
+    uint256 public constant MIN_START_FDV_USD = 15_000;
+    /// @notice The ETH/USD price must have been updated within this delay (Chainlink heartbeat: 1 hour).
+    uint256 public constant ORACLE_MAX_AGE = 1 hours;
     /// @dev ceil(MIN_TICK / 200) * 200.
     int24 public constant TICK_LOWER = -887_200;
 
@@ -46,6 +61,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
 
     IPoolManager public immutable poolManager;
     CloverHook public immutable hook;
+    /// @notice Chainlink ETH / USD price feed on Ethereum mainnet.
+    IAggregatorV3 public constant ETH_USD_FEED = IAggregatorV3(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
     CloverCanvas public immutable canvas;
     address public immutable DEPLOYER;
 
@@ -68,6 +85,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint16 tokenFeeBps;
         uint64 createdAt;
         PoolId poolId;
+        int24 startTick;
+        uint256 ethUsd;
     }
 
     struct LaunchParams {
@@ -105,6 +124,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     );
     event LiquidityLocked(uint256 indexed tokenIndex, uint128 liquidity, uint256 tokenAmount, uint256 dust);
     event DevBuy(uint256 indexed tokenIndex, address indexed creator, uint256 ethIn, uint256 tokensOut);
+    event StartPrice(uint256 indexed tokenIndex, uint256 ethUsd, int24 startTick, uint256 startFdvWei);
 
     error NotDeployer();
     error AlreadyGenesis();
@@ -114,6 +134,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     error InsufficientValue();
     error SlippageExceeded(uint256 out, uint256 minOut);
     error ZeroAddress();
+    error StaleOracle();
+    error BadOracle();
 
     constructor(
         IPoolManager poolManager_,
@@ -188,6 +210,22 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
 
     // ---------------------------------------------------------------- views
 
+    /// @notice Starting tick from the current ETH/USD price: the highest tick on the 200 grid whose FDV
+    ///         (1e9 tokens) is at least `MIN_START_FDV_USD`. Reverts on a stale or invalid price.
+    function startTick() public view returns (int24 tick, uint256 ethUsd) {
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = ETH_USD_FEED.latestRoundData();
+        if (answer <= 0 || answeredInRound < roundId) revert BadOracle();
+        if (updatedAt > block.timestamp || block.timestamp - updatedAt > ORACLE_MAX_AGE) revert StaleOracle();
+        ethUsd = uint256(answer);
+        uint256 unit = 10 ** ETH_USD_FEED.decimals();
+        // Tokens per ETH at an FDV of exactly MIN_START_FDV_USD: 1e9 * ethUsd / 15,000, as a Q192 ratio.
+        uint256 ratioX192 = FullMath.mulDiv(1e9 * ethUsd, 1 << 192, MIN_START_FDV_USD * unit);
+        int24 t = TickMath.getTickAtSqrtPrice(uint160(Math.sqrt(ratioX192)));
+        // Fewer tokens per ETH is a higher FDV: round down onto the grid.
+        tick = t - (((t % TICK_SPACING) + TICK_SPACING) % TICK_SPACING);
+        if (tick <= TICK_LOWER) revert BadOracle();
+    }
+
     function genesisExemptWallets() external view returns (address[] memory) {
         return _genesisExempt;
     }
@@ -233,9 +271,21 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint256 devBuy,
         uint256 devBuyMinOut
     ) private returns (uint256 tokenIndex) {
-        tokenIndex = _tokens.length;
+        tokenIndex = _push(token, creator, tokenFeeBps, canvasId);
         PoolKey memory key = poolKeyOf(token);
-        PoolId poolId = key.toId();
+        hook.registerPool(key, tokenIndex, uint24(tokenFeeBps) * 100, creator, canvasId, canvasShareBps, exempt);
+        _startProtection(tokenIndex, token);
+        _initPool(tokenIndex, key);
+        _emitLaunched(tokenIndex, canvasShareBps);
+        if (devBuy != 0) _devBuy(tokenIndex, key, creator, devBuy, devBuyMinOut);
+    }
+
+    function _push(address token, address creator, uint16 tokenFeeBps, uint256 canvasId)
+        private
+        returns (uint256 tokenIndex)
+    {
+        tokenIndex = _tokens.length;
+        (int24 tick, uint256 ethUsd) = startTick();
         _tokens.push(
             TokenInfo({
                 token: token,
@@ -243,21 +293,35 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
                 canvasId: uint32(canvasId),
                 tokenFeeBps: tokenFeeBps,
                 createdAt: uint64(block.timestamp),
-                poolId: poolId
+                poolId: poolKeyOf(token).toId(),
+                startTick: tick,
+                ethUsd: ethUsd
             })
         );
         tokenIndexPlusOne[token] = tokenIndex + 1;
+    }
 
-        hook.registerPool(key, tokenIndex, uint24(tokenFeeBps) * 100, creator, canvasId, canvasShareBps, exempt);
-        poolManager.initialize(key, TickMath.getSqrtPriceAtTick(TICK_UPPER));
-        _addLiquidity(tokenIndex, key);
-        _emitLaunched(tokenIndex, canvasShareBps);
+    function _startProtection(uint256 tokenIndex, address token) private {
+        CloverLaunchProtectionLike protection = CloverLaunchProtectionLike(address(hook.protection()));
+        CloverToken(token).startProtection(
+            ICloverTransferProtection(address(protection)), protection.protectionEnds(tokenIndex)
+        );
+    }
 
-        if (devBuy != 0) {
-            uint256 out = abi.decode(poolManager.unlock(abi.encode(uint8(1), key, devBuy, creator)), (uint256));
-            if (out < devBuyMinOut) revert SlippageExceeded(out, devBuyMinOut);
-            emit DevBuy(tokenIndex, creator, devBuy, out);
-        }
+    function _devBuy(uint256 tokenIndex, PoolKey memory key, address creator, uint256 devBuy, uint256 minOut) private {
+        uint256 out = abi.decode(poolManager.unlock(abi.encode(uint8(1), key, devBuy, creator, int24(0))), (uint256));
+        if (out < minOut) revert SlippageExceeded(out, minOut);
+        emit DevBuy(tokenIndex, creator, devBuy, out);
+    }
+
+    function _initPool(uint256 tokenIndex, PoolKey memory key) private {
+        TokenInfo storage t = _tokens[tokenIndex];
+        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(t.startTick);
+        poolManager.initialize(key, sqrtStart);
+        // FDV in wei: 1e9 tokens at (2^96 / sqrtStart)^2 ETH per token.
+        uint256 fdv = FullMath.mulDiv(1e9 ether, 1 << 192, uint256(sqrtStart) * sqrtStart);
+        emit StartPrice(tokenIndex, t.ethUsd, t.startTick, fdv);
+        _addLiquidity(tokenIndex, key, t.startTick);
     }
 
     function _emitLaunched(uint256 tokenIndex, uint16 canvasShareBps) private {
@@ -275,26 +339,28 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         );
     }
 
-    function _addLiquidity(uint256 tokenIndex, PoolKey memory key) private {
+    function _addLiquidity(uint256 tokenIndex, PoolKey memory key, int24 tickUpper) private {
         uint256 amount = IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this));
         uint160 sqrtLower = TickMath.getSqrtPriceAtTick(TICK_LOWER);
-        uint160 sqrtUpper = TickMath.getSqrtPriceAtTick(TICK_UPPER);
+        uint160 sqrtUpper = TickMath.getSqrtPriceAtTick(tickUpper);
         uint128 liquidity = uint128(FullMath.mulDiv(amount, FixedPoint96.Q96, sqrtUpper - sqrtLower));
-        uint256 paid = abi.decode(poolManager.unlock(abi.encode(uint8(0), key, uint256(liquidity), address(0))), (uint256));
+        uint256 paid = abi.decode(
+            poolManager.unlock(abi.encode(uint8(0), key, uint256(liquidity), address(0), tickUpper)), (uint256)
+        );
         emit LiquidityLocked(tokenIndex, liquidity, paid, amount - paid);
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
-        (uint8 action, PoolKey memory key, uint256 amount, address recipient) =
-            abi.decode(data, (uint8, PoolKey, uint256, address));
+        (uint8 action, PoolKey memory key, uint256 amount, address recipient, int24 tickUpper) =
+            abi.decode(data, (uint8, PoolKey, uint256, address, int24));
 
         if (action == 0) {
             (BalanceDelta delta,) = poolManager.modifyLiquidity(
                 key,
                 IPoolManager.ModifyLiquidityParams({
                     tickLower: TICK_LOWER,
-                    tickUpper: TICK_UPPER,
+                    tickUpper: tickUpper,
                     liquidityDelta: int256(amount),
                     salt: bytes32(0)
                 }),
@@ -326,3 +392,6 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     }
 }
 
+interface CloverLaunchProtectionLike {
+    function protectionEnds(uint256 tokenIndex) external view returns (uint256);
+}

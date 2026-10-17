@@ -24,7 +24,7 @@
     "symbol": "CLOVER"
   },
   "presentation": {
-    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3.3% fee on every trade, enforced in the pool whatever the router: 0.3% Programmable platform fee plus a 3% CLOVER fee (20% to the Genesis canvas, 80% to the creator). Anti-snipe at launch: buy fee starting at 99% and decaying to 3.3% over 30 seconds, and buys capped at 2% of the supply per wallet for 5 minutes. Starting FDV about $15,000 (6.2 ETH).",
+    "description": "CLOVER is an onchain pixel game on Ethereum. Holders capture pixels on shared canvases and earn ETH from swap fees. $CLOVER has a 3.3% fee on every trade, enforced in the pool whatever the router: 0.3% Programmable platform fee plus a 3% CLOVER fee (20% to the Genesis canvas, 80% to the creator). Launch protection: buy fee from 99% down to 3.3% over 30 seconds (surplus held in a separate opening-tax vault), and for 5 minutes at most 2% of the supply per buyer and per recipient. Starting FDV $15,000 from the Chainlink ETH/USD price.",
     "image": {
       "sourcePath": "assets/clover-logo.png",
       "uri": "https://cloverpixel.xyz/logo.png"

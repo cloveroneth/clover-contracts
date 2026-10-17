@@ -84,7 +84,7 @@ abstract contract CloverGraph {
     function topologyHash() internal pure returns (bytes32) {
         return keccak256(
             "clover.v1.topology:"
-            "ctor[0:CloverHook(poolManager,platformRecipient)]"
+            "ctor[0:CloverHook(poolManager,platformRecipient,universalRouter,programmableRouter)]"
             "ctor[1:CloverCanvas(protocolRecipient)]"
             "ctor[2:Launchpad(poolManager,0,1,genesis)]"
             "ctor[3:CloverToken(name,symbol,2)]"
@@ -95,6 +95,11 @@ abstract contract CloverGraph {
     }
 
     // ------------------------------------------------------------------ build
+
+    /// @dev Approved routers of the opening protection: canonical Uniswap v4 Universal Router and the router used
+    ///      by programmable.market. Both expose `msgSender()`.
+    address internal constant UNIVERSAL_ROUTER_V4 = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    address internal constant PROGRAMMABLE_ROUTER = 0xd92A36B0000531EF3063dEd4De20A0783308446C;
 
     function buildTargets(Config memory c, Prepared memory p) internal view {
         p.factory = IGraph(c.router.GRAPH_FACTORY());
@@ -112,7 +117,7 @@ abstract contract CloverGraph {
 
         // 0. Hook: init code depends on no project address, so its salt is mined once.
         bytes memory hookInit =
-            abi.encodePacked(type(CloverHook).creationCode, abi.encode(p.poolManager, c.platformRecipient));
+            abi.encodePacked(type(CloverHook).creationCode, abi.encode(p.poolManager, c.platformRecipient, UNIVERSAL_ROUTER_V4, PROGRAMMABLE_ROUTER));
         (p.hookApplicantSalt, p.saltIterations, p.accounts[T_HOOK]) =
             mineHookSalt(p.factory, p.authorization, targetIdHash(T_HOOK), keccak256(hookInit), c.maxSaltIterations);
         p.targets[T_HOOK] = _target(T_HOOK, p.hookApplicantSalt, hookInit);

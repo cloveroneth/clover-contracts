@@ -8,7 +8,9 @@ Site: https://cloverpixel.xyz · X: https://x.com/CloverOnETH
 | `src/CloverHook.sol` | Shared v4 hook (permissions mask `0x28CC`). Takes the fees in native ETH on every swap. |
 | `src/CloverCanvas.sol` | Canvases of ERC-721 pixels: capture at the holder's price, weekly rent from a deposit, linear fade. |
 | `src/Launchpad.sol` | Creates the pools, seeds single-sided liquidity, runs the `genesis` launch and later `launchWithCanvas`. |
-| `src/CloverToken.sol` | Fixed-supply ERC-20 (1,000,000,000), minted once to the Launchpad. |
+| `src/CloverToken.sol` | Fixed-supply ERC-20 (1,000,000,000), minted once to the Launchpad; reports transfers to the protection for 300 s. |
+| `src/CloverLaunchProtection.sol` | Opening fee decay, fixed exemptions, authenticated buyer and 2 % buyer / recipient caps (created by the hook). |
+| `src/CloverOpeningTaxVault.sol` | Custody of the opening tax, claim to the token creator (created by the hook). |
 | `src/programmable/EthereumNativeFeeVaultV3.sol` | Programmable's fee vault, unmodified, created by the hook. |
 
 ## Fees
@@ -41,22 +43,30 @@ canonical Uniswap Universal Router and through the router used by programmable.m
 
 ## Opening protection (anti-snipe)
 
-Enforced by the hook on every pool, from the block that creates it:
+Three components, apart from the fee accounting, all created by the `CloverHook` constructor or set at launch:
 
-- **Opening buy fee**: the total buy fee starts at **99 %** and decays linearly to the normal rate (3.3 % for
-  $CLOVER) over **30 seconds**. The Programmable platform fee stays exactly 30 bps of the gross; the part above
-  the normal rate is added to the token fee (same canvas / creator split). Sells always pay the normal rate.
-- **Exempt wallets**: the token creator and up to **6 wallets** fixed at launch pay the normal rate from the first
-  block. For $CLOVER they are `genesis.exemptWallets` in `launch/launch.params.json`, passed to the Launchpad
-  constructor (`genesisExemptWallets()`); for later tokens, `LaunchParams.exemptWallets`. They cannot be changed.
-- **Opening buy limit**: for **300 seconds**, the tokens bought per wallet are capped at **2 % of the supply**
-  (20,000,000), exempt wallets and the creator's initial buy included.
-- The buyer is identified by `tx.origin`. These rules reduce sniping; they cannot rule it out (several wallets).
+- **Starting FDV >= $15,000** (`Launchpad.startTick`): at launch the Launchpad reads Chainlink ETH/USD
+  (`0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419`), requires a positive answer updated within the last hour, and starts
+  the pool at the highest tick on the 200 grid whose FDV is at least $15,000 (one grid step, about 2 %, above at
+  most). The price and tick are stored in `tokenInfo` and emitted in `StartPrice`.
+- **Opening buy fee** (`CloverLaunchProtection`): the total buy fee starts at **99 %** and decays linearly to the
+  normal rate (3.3 % for $CLOVER) over **30 seconds**. The platform fee stays exactly ceil 30 bps of the gross and
+  the token fee stays at its normal rate; only the surplus is the **opening tax**, held in the dedicated
+  `CloverOpeningTaxVault` (backed native ETH, permissionless `claim` to the token creator). Sells always pay the
+  normal rate. The token creator and up to **6 wallets** fixed at launch pay the normal rate from the first block
+  ($CLOVER: `genesis.exemptWallets` in `launch/launch.params.json`, `Launchpad.genesisExemptWallets()`; later
+  tokens: `LaunchParams.exemptWallets`). They cannot be changed.
+- **Authenticated buyer and recipient caps, 300 seconds** (`CloverLaunchProtection` + `CloverToken`): buys are
+  accepted only from the Launchpad (initial buy, buyer = creator) or an approved router (Uniswap Universal Router
+  `0x66a9…8Af`, programmable.market router `0xd92A…446C`), whose `msgSender()` is the buyer. Each buyer can buy at
+  most **2 % of the supply** (20,000,000) and each recipient can receive at most 2 %, cumulatively: the token
+  reports every transfer, infrastructure (PoolManager, hook, Launchpad, approved routers) excepted. Exempt wallets
+  and the creator's initial buy are included; sending tokens away never resets either ledger.
 
-## Liquidity
+## Liquidity## Liquidity
 
 `Launchpad` initializes each pool and adds the whole token supply as one single-sided position
-(ticks `-887200` to `189000`, spacing 200): starting FDV about 6.2 ETH (~$15,000 at launch). The position is owned by the Launchpad, which has no function
+(ticks `-887200` to the oracle-derived start tick, spacing 200). The position is owned by the Launchpad, which has no function
 to remove it: the liquidity is permanent.
 
 ## Build and test

@@ -35,6 +35,7 @@ const REMAPPINGS = [
   "@uniswap/v4-core/src/=lib/v4-core/src/",
 ];
 const ENTRYPOINTS = ["src/CloverCanvas.sol", "src/CloverHook.sol", "src/CloverToken.sol", "src/Launchpad.sol"];
+// CloverLaunchProtection and CloverOpeningTaxVault are created by the CloverHook constructor (imported by it).
 
 const params = JSON.parse(await readFile(path.join(here, "launch.params.json"), "utf8"));
 const revision = (process.env.CLOVER_SOURCE_REVISION ?? "").toLowerCase();
@@ -137,7 +138,11 @@ const IMMUTABLES = {
   genesisRentBps: { abiType: "uint16", literal: String(g.rentBps) },
   genesisFadeTime: { abiType: "uint32", literal: String(g.fadeTimeSeconds) },
   genesisStartPrice: { abiType: "uint96", literal: String(g.startPriceWei) },
+  LAUNCHPAD: { abiType: "address", target: "launchpad" },
 };
+// Approved routers of the opening protection (both expose msgSender()).
+const UNIVERSAL_ROUTER_V4 = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
+const PROGRAMMABLE_ROUTER = "0xd92A36B0000531EF3063dEd4De20A0783308446C";
 
 await mkdir(path.join(here, "standard-json"), { recursive: true });
 await mkdir(path.join(here, "artifacts"), { recursive: true });
@@ -211,7 +216,7 @@ const config = {
       compilationUnitId: "clover-solc",
       artifact: hook.artifact,
       applicantSalt: { mode: "deterministic-hook-permission-grind-v1", start: "0", maxAttempts: "262144" },
-      constructorArguments: [POOL_MANAGER, PLATFORM_RECIPIENT],
+      constructorArguments: [POOL_MANAGER, PLATFORM_RECIPIENT, UNIVERSAL_ROUTER_V4, PROGRAMMABLE_ROUTER],
       initializer: { function: "initialize", arguments: [{ target: "launchpad" }, { target: "canvas" }] },
       deploymentValueWei: "0",
       initializerValueWei: "0",

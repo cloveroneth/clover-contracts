@@ -30,6 +30,7 @@ abstract contract Base is Test {
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
     uint256 internal genesisAt;
+    address internal otherRouter = makeAddr("otherRouter");
 
     uint16 internal constant GENESIS_FEE_BPS = 500;
     uint8 internal constant GENESIS_SIZE = 12;
@@ -42,14 +43,20 @@ abstract contract Base is Test {
         // Mainnet PoolManager holds native ETH from other pools; hooks `take` before the trader settles.
         vm.deal(address(manager), 10_000 ether);
 
+        // Chainlink ETH / USD at its mainnet address: $2,400, always fresh unless a test sets it.
+        deployCodeTo("MockEthUsdFeed.sol:MockEthUsdFeed", 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
+        router = new TestSwapRouter(manager);
+
         // CREATE2 salt mining (not etching): the hook's constructor creates its fee vault with kernel = hook.
-        bytes32 initHash = keccak256(abi.encodePacked(type(CloverHook).creationCode, abi.encode(manager, platform)));
+        bytes32 initHash = keccak256(
+            abi.encodePacked(type(CloverHook).creationCode, abi.encode(manager, platform, address(router), otherRouter))
+        );
         uint256 salt;
         while (
             uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), bytes32(salt), initHash))))
                 & 0x3FFF != HOOK_FLAGS
         ) ++salt;
-        hook = new CloverHook{salt: bytes32(salt)}(manager, platform);
+        hook = new CloverHook{salt: bytes32(salt)}(manager, platform, address(router), otherRouter);
 
         canvas = new CloverCanvas(protocol);
         address[] memory exempt = new address[](1);
@@ -75,7 +82,6 @@ abstract contract Base is Test {
         genesisAt = block.timestamp;
 
         cloverKey = launchpad.poolKeyOf(address(clover));
-        router = new TestSwapRouter(manager);
 
         for (uint256 i; i < 4; ++i) {
             address u = [creator, alice, bob, carol][i];
@@ -84,7 +90,7 @@ abstract contract Base is Test {
             clover.approve(address(router), type(uint256).max);
         }
         // Most tests trade after the opening protection; OpeningProtection tests warp back.
-        vm.warp(genesisAt + hook.OPENING_LIMIT_PERIOD());
+        vm.warp(genesisAt + hook.protection().OPENING_LIMIT_PERIOD());
     }
 
     // ---------------------------------------------------------------- helpers
@@ -117,7 +123,7 @@ abstract contract Base is Test {
         returns (uint256 idx, address token, uint256 canvasId, PoolKey memory key)
     {
         (idx, token, canvasId, key) = launchChildAt(who, feeBps, shareBps, devBuy, new address[](0));
-        vm.warp(block.timestamp + hook.OPENING_LIMIT_PERIOD());
+        vm.warp(block.timestamp + hook.protection().OPENING_LIMIT_PERIOD());
     }
 
     /// @dev Launches without skipping the opening protection.

@@ -6,11 +6,13 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
-import {CurrencyLibrary} from "v4-core/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {CloverCanvas} from "./CloverCanvas.sol";
 import {EthereumNativeFeeVaultV3} from "./programmable/EthereumNativeFeeVaultV3.sol";
+import {CloverLaunchProtection} from "./CloverLaunchProtection.sol";
+import {CloverOpeningTaxVault} from "./CloverOpeningTaxVault.sol";
 
 /// @title CloverHook
 /// @notice Shared Uniswap v4 hook for the $CLOVER pool and every pool created by the Launchpad.
@@ -33,12 +35,14 @@ import {EthereumNativeFeeVaultV3} from "./programmable/EthereumNativeFeeVaultV3.
 /// - Token fee: taken from the PoolManager with `take` and split: `canvasShareBps` accrues for the token's
 ///   canvas (sent by the permissionless `flush`), the rest is owed to the token creator.
 ///
-/// Opening protection, on every pool from its creation (anti-sniping):
-/// - Opening buy fee: total buy fee 99 % at creation, decaying linearly to the normal rate over 30 s. The part
-///   above the normal rate is added to the token fee (same split). The platform fee stays 30 bps of the gross.
-///   Exempt: the Launchpad initial buy, the token creator and up to 6 wallets fixed at launch (`tx.origin`).
-/// - Opening buy limit: for 300 s, cumulative buys per wallet (`tx.origin`) are capped at 2 % of the supply,
-///   exempt wallets included.
+/// Opening protection (anti-sniping), on every pool from its creation, in separate components created by this
+/// constructor:
+/// - `protection` (CloverLaunchProtection): 99 % opening buy fee decaying to the normal rate over 30 s with fixed
+///   exemptions (creator + up to 6 wallets); for 300 s, buys only from the Launchpad or an approved router, and
+///   cumulative 2 % caps per authenticated buyer and per recipient (the token reports its transfers).
+/// - `openingTaxVault` (CloverOpeningTaxVault): custody of the opening tax, the part of an early buy fee above the
+///   normal rate. It never enters the platform fee, the token fee or the creator / canvas balances.
+/// The platform fee stays ceil 30 bps of the gross on every trade, opening buys included.
 contract CloverHook is IHooks {
     using PoolIdLibrary for PoolKey;
 
@@ -54,14 +58,6 @@ contract CloverHook is IHooks {
     /// @notice Lowering the canvas share: at most 10 points, at most once per 7 days.
     uint16 public constant MAX_SHARE_DECREASE_BPS = 1_000;
     uint256 public constant SHARE_DECREASE_DELAY = 7 days;
-    /// @notice Total buy fee at pool creation, decaying linearly to the normal rate over `OPENING_DECAY`.
-    uint24 public constant OPENING_FEE_PIPS = 990_000;
-    uint256 public constant OPENING_DECAY = 30 seconds;
-    /// @notice For `OPENING_LIMIT_PERIOD`, a wallet can buy at most `OPENING_MAX_BUY` (2 % of the supply).
-    uint256 public constant OPENING_LIMIT_PERIOD = 300 seconds;
-    uint256 public constant OPENING_MAX_BUY = 20_000_000 ether;
-    /// @notice Wallets exempt from the opening buy fee, in addition to the token creator.
-    uint256 public constant MAX_OPENING_EXEMPT = 6;
 
     // ---------------------------------------------------------------- immutables
 
@@ -79,6 +75,9 @@ contract CloverHook is IHooks {
     /// @dev Written once by the constructor (the vault is this hook's first CREATE); there is no setter. Kept in
     ///      storage rather than as an immutable because its address derives from the hook's own address.
     EthereumNativeFeeVaultV3 public feeVault;
+    /// @notice Opening protection component and opening tax custody, created by the constructor (no setter).
+    CloverLaunchProtection public protection;
+    CloverOpeningTaxVault public openingTaxVault;
 
     // ---------------------------------------------------------------- state
 
@@ -86,7 +85,6 @@ contract CloverHook is IHooks {
         uint32 tokenIndex;
         uint24 tokenFeePips;
         bool registered;
-        uint40 launchedAt;
     }
 
     struct TokenConfig {
@@ -100,8 +98,6 @@ contract CloverHook is IHooks {
     mapping(uint256 tokenIndex => TokenConfig) public tokenConfig;
     mapping(uint256 tokenIndex => uint256) public canvasPending;
     mapping(address creator => uint256) public creatorOwed;
-    mapping(uint256 tokenIndex => mapping(address wallet => bool)) public openingExempt;
-    mapping(PoolId => mapping(address wallet => uint256)) public openingBought;
 
     // ---------------------------------------------------------------- events
 
@@ -114,7 +110,7 @@ contract CloverHook is IHooks {
         uint24 tokenFeePips,
         uint16 canvasShareBps
     );
-    event OpeningExempt(uint256 indexed tokenIndex, address indexed wallet);
+    event OpeningTaxTaken(PoolId indexed poolId, address indexed sender, uint256 gross, uint256 openingTax);
     event FeeTaken(
         PoolId indexed poolId, address indexed sender, bool isBuy, uint256 gross, uint256 platform, uint256 tokenFee
     );
@@ -139,8 +135,6 @@ contract CloverHook is IHooks {
     error TransferFailed();
     error ZeroAddress();
     error InvalidRecipient();
-    error TooManyExempt();
-    error OpeningBuyLimit();
 
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -152,7 +146,7 @@ contract CloverHook is IHooks {
         _;
     }
 
-    constructor(IPoolManager poolManager_, address platformRecipient_) {
+    constructor(IPoolManager poolManager_, address platformRecipient_, address routerA_, address routerB_) {
         if (address(poolManager_) == address(0) || platformRecipient_ == address(0)) revert ZeroAddress();
         poolManager = poolManager_;
         DEPLOYER = msg.sender;
@@ -160,6 +154,8 @@ contract CloverHook is IHooks {
         feeVault = new EthereumNativeFeeVaultV3(poolManager_, address(this));
         if (platformRecipient_ != feeVault.PLATFORM_RECIPIENT()) revert InvalidRecipient();
         PLATFORM_RECIPIENT = platformRecipient_;
+        protection = new CloverLaunchProtection(address(poolManager_), routerA_, routerB_);
+        openingTaxVault = new CloverOpeningTaxVault(address(poolManager_));
         Hooks.validateHookPermissions(IHooks(address(this)), getHookPermissions());
     }
 
@@ -195,7 +191,7 @@ contract CloverHook is IHooks {
     // ---------------------------------------------------------------- launchpad entry point
 
     /// @notice Registers the fee configuration of a pool before the Launchpad initializes it. The opening
-    ///         protection starts now. `exempt` (at most 6 wallets) and `creator` skip the opening buy fee.
+    ///         protection starts now: `exempt` (at most 6 wallets) and `creator` skip the opening buy fee.
     function registerPool(
         PoolKey calldata key,
         uint256 tokenIndex,
@@ -211,22 +207,11 @@ contract CloverHook is IHooks {
             tokenFeePips < MIN_TOKEN_FEE_PIPS || tokenFeePips > MAX_TOKEN_FEE_PIPS
                 || canvasShareBps < MIN_CANVAS_SHARE_BPS || canvasShareBps > BPS
         ) revert InvalidFee();
-        if (exempt.length > MAX_OPENING_EXEMPT) revert TooManyExempt();
-        poolConfig[id] = PoolConfig({
-            tokenIndex: uint32(tokenIndex),
-            tokenFeePips: tokenFeePips,
-            registered: true,
-            launchedAt: uint40(block.timestamp)
-        });
+        poolConfig[id] = PoolConfig({tokenIndex: uint32(tokenIndex), tokenFeePips: tokenFeePips, registered: true});
         tokenConfig[tokenIndex] =
             TokenConfig({creator: creator, canvasId: uint32(canvasId), canvasShareBps: canvasShareBps, lastDecrease: 0});
         emit PoolRegistered(id, tokenIndex, creator, canvasId, tokenFeePips, canvasShareBps);
-        openingExempt[tokenIndex][creator] = true;
-        emit OpeningExempt(tokenIndex, creator);
-        for (uint256 i; i < exempt.length; ++i) {
-            openingExempt[tokenIndex][exempt[i]] = true;
-            emit OpeningExempt(tokenIndex, exempt[i]);
-        }
+        protection.register(tokenIndex, Currency.unwrap(key.currency1), creator, exempt);
     }
 
     // ---------------------------------------------------------------- token creator
@@ -281,9 +266,10 @@ contract CloverHook is IHooks {
         tokenFee = gross * poolConfig[id].tokenFeePips / PIPS;
     }
 
-    /// @notice Current total fee rate (pips) of a buy by `buyer` through `sender`, opening fee included.
-    function buyFeePips(PoolId id, address sender, address buyer) external view returns (uint256) {
-        return _rate(_config(id), sender, buyer, true);
+    /// @notice Current total fee rate (pips) of a buy by `buyer`, opening fee included.
+    function buyFeePips(PoolId id, address buyer) external view returns (uint256) {
+        PoolConfig memory cfg = _config(id);
+        return protection.ratePipsFor(cfg.tokenIndex, buyer, _normalRate(cfg));
     }
 
     // ---------------------------------------------------------------- hook callbacks
@@ -322,7 +308,7 @@ contract CloverHook is IHooks {
 
     function _beforeSwapFee(address sender, PoolId id, bool isBuy, int256 amountSpecified) private returns (uint256) {
         PoolConfig memory cfg = _config(id);
-        uint256 rate = _rate(cfg, sender, tx.origin, isBuy);
+        uint256 rate = _rate(cfg, sender, isBuy);
         uint256 gross;
         if (amountSpecified < 0) {
             gross = uint256(-amountSpecified);
@@ -332,7 +318,7 @@ contract CloverHook is IHooks {
         return _charge(id, cfg, sender, isBuy, gross, rate);
     }
 
-    /// @dev Every buy: opening buy limit. Exact-in sell: fee on the ETH output. Exact-out buy: fee on the gross
+    /// @dev Every buy: opening buyer limit. Exact-in sell: fee on the ETH output. Exact-out buy: fee on the gross
     ///      ETH input. Both return a positive unspecified delta (ETH).
     function afterSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta delta, bytes calldata)
         external
@@ -341,7 +327,9 @@ contract CloverHook is IHooks {
     {
         PoolId id = key.toId();
         PoolConfig memory cfg = _config(id);
-        if (params.zeroForOne) _limitOpeningBuy(id, cfg, delta.amount1());
+        if (params.zeroForOne && delta.amount1() > 0) {
+            protection.recordBuy(cfg.tokenIndex, sender, uint256(uint128(delta.amount1())));
+        }
         bool exactInput = params.amountSpecified < 0;
         if (exactInput == params.zeroForOne) return (IHooks.afterSwap.selector, 0);
         return (IHooks.afterSwap.selector, _afterSwapFee(sender, id, cfg, exactInput, delta.amount0()));
@@ -352,7 +340,7 @@ contract CloverHook is IHooks {
         returns (int128)
     {
         // exactInput here means a sell (oneForZero); otherwise an exact-out buy.
-        uint256 rate = _rate(cfg, sender, tx.origin, !exactInput);
+        uint256 rate = _rate(cfg, sender, !exactInput);
         uint256 gross;
         if (exactInput) {
             // Sell exact-in: ETH leaves the pool, amount0 > 0.
@@ -417,23 +405,15 @@ contract CloverHook is IHooks {
         if (!cfg.registered) revert PoolNotRegistered();
     }
 
-    /// @dev Total fee rate: platform + token fee, or for a non-exempt buy during the first 30 s, the opening
-    ///      rate decaying linearly from 99 % to that normal rate.
-    function _rate(PoolConfig memory cfg, address sender, address buyer, bool isBuy) private view returns (uint256 rate) {
-        rate = uint256(PLATFORM_FEE_PIPS) + cfg.tokenFeePips;
-        if (!isBuy) return rate;
-        uint256 elapsed = block.timestamp - cfg.launchedAt;
-        if (elapsed >= OPENING_DECAY || sender == launchpad || openingExempt[cfg.tokenIndex][buyer]) return rate;
-        uint256 opening = OPENING_FEE_PIPS - (OPENING_FEE_PIPS - rate) * elapsed / OPENING_DECAY;
-        if (opening > rate) rate = opening;
+    function _normalRate(PoolConfig memory cfg) private pure returns (uint256) {
+        return uint256(PLATFORM_FEE_PIPS) + cfg.tokenFeePips;
     }
 
-    /// @dev Tokens bought by `tx.origin` during the first 300 s, capped at 2 % of the supply.
-    function _limitOpeningBuy(PoolId id, PoolConfig memory cfg, int128 tokensOut) private {
-        if (tokensOut <= 0 || block.timestamp >= uint256(cfg.launchedAt) + OPENING_LIMIT_PERIOD) return;
-        uint256 bought = openingBought[id][tx.origin] + uint256(uint128(tokensOut));
-        if (bought > OPENING_MAX_BUY) revert OpeningBuyLimit();
-        openingBought[id][tx.origin] = bought;
+    /// @dev Total fee rate: the normal rate, or for a buy the protection's opening rate (99 % decaying to normal
+    ///      over 30 s, except exempt buyers).
+    function _rate(PoolConfig memory cfg, address sender, bool isBuy) private view returns (uint256) {
+        if (!isBuy) return _normalRate(cfg);
+        return protection.buyRatePips(cfg.tokenIndex, sender, _normalRate(cfg));
     }
 
     function _charge(PoolId id, PoolConfig memory cfg, address sender, bool isBuy, uint256 gross, uint256 rate)
@@ -441,10 +421,17 @@ contract CloverHook is IHooks {
         returns (uint256 fee)
     {
         uint256 platform = (gross * PLATFORM_FEE_PIPS + PIPS - 1) / PIPS;
-        // Token fee, plus the opening surplus on early buys; same base, floored.
-        uint256 tokenFee = gross * (rate - PLATFORM_FEE_PIPS) / PIPS;
-        fee = platform + tokenFee;
+        uint256 tokenFee = gross * cfg.tokenFeePips / PIPS;
+        // Opening buys: the part above the normal rate, same base, floored, to the opening tax vault.
+        uint256 openingTax = gross * (rate - _normalRate(cfg)) / PIPS;
+        fee = platform + tokenFee + openingTax;
         if (fee == 0) return 0;
+
+        if (openingTax != 0) {
+            emit OpeningTaxTaken(id, sender, gross, openingTax);
+            poolManager.take(CurrencyLibrary.ADDRESS_ZERO, address(openingTaxVault), openingTax);
+            openingTaxVault.record(cfg.tokenIndex, openingTax);
+        }
 
         if (tokenFee != 0) {
             TokenConfig storage t = tokenConfig[cfg.tokenIndex];
