@@ -118,6 +118,11 @@ const declarations = new Map();
 })(Object.values(output.sources).map((s) => s.ast));
 
 const g = params.genesis;
+// Up to 6 wallets exempt from the $CLOVER opening buy fee (besides the launch wallet, the Genesis creator).
+const genesisExempt = g.exemptWallets ?? [];
+if (!Array.isArray(genesisExempt) || genesisExempt.length > 6) throw new Error("genesis.exemptWallets: at most 6");
+for (const w of genesisExempt) if (!/^0x[0-9a-fA-F]{40}$/.test(w)) throw new Error(`genesis.exemptWallets: bad address ${w}`);
+if (new Set(genesisExempt.map((w) => w.toLowerCase())).size !== genesisExempt.length) throw new Error("genesis.exemptWallets: duplicate");
 const IMMUTABLES = {
   poolManager: { abiType: "address", literal: POOL_MANAGER },
   DEPLOYER: { abiType: "address", literal: GRAPH_FACTORY },
@@ -250,6 +255,7 @@ const config = {
         String(g.rentBps),
         String(g.fadeTimeSeconds),
         String(g.startPriceWei),
+        genesisExempt,
       ],
       initializer: { function: "genesis", arguments: [{ target: "token" }] },
       deploymentValueWei: "0",

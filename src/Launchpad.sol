@@ -24,7 +24,9 @@ import {CloverCanvas} from "./CloverCanvas.sol";
 ///         locked single-sided liquidity, canvas, and the creator's optional first buy.
 ///
 /// Liquidity: 100 % of the supply in one position [TICK_LOWER, TICK_UPPER] owned by this contract.
-/// The pool starts at TICK_UPPER, so the position holds only the token. Starting FDV is about 2 ETH.
+/// The pool starts at TICK_UPPER, so the position holds only the token. Starting FDV is about 8 ETH.
+/// Opening protection (enforced by the hook, see CloverHook): 99 % buy fee decaying over 30 s, 2 % per-wallet
+/// buy limit for 300 s; the creator and up to 6 wallets chosen at launch skip the opening fee.
 /// There is no function that removes liquidity: it is locked forever.
 contract Launchpad is ReentrancyGuard, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
@@ -35,8 +37,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
     /// @notice Paid on every launch, into the Genesis canvas rewards.
     uint256 public constant LAUNCH_FEE = 0.01 ether;
     int24 public constant TICK_SPACING = 200;
-    /// @dev floor(log_1.0001(1e9 / 2) / 200) * 200: starting FDV ~2.0224 ETH.
-    int24 public constant TICK_UPPER = 200_200;
+    /// @dev floor(log_1.0001(1e9 / 8) / 200) * 200: starting FDV ~8.04 ETH (over $15,000).
+    int24 public constant TICK_UPPER = 186_400;
     /// @dev ceil(MIN_TICK / 200) * 200.
     int24 public constant TICK_LOWER = -887_200;
 
@@ -79,7 +81,12 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint32 fadeTime;
         uint96 startPrice;
         uint256 devBuyMinOut;
+        /// @dev Up to 6 wallets exempt from the opening buy fee, besides the creator.
+        address[] exemptWallets;
     }
+
+    /// @dev Wallets exempt from the $CLOVER opening buy fee, besides `genesisCreator` (at most 6).
+    address[] internal _genesisExempt;
 
     TokenInfo[] internal _tokens;
     mapping(address token => uint256) public tokenIndexPlusOne;
@@ -118,7 +125,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint8 genesisSize_,
         uint16 genesisRentBps_,
         uint32 genesisFadeTime_,
-        uint96 genesisStartPrice_
+        uint96 genesisStartPrice_,
+        address[] memory genesisExempt_
     ) {
         if (
             address(poolManager_) == address(0) || address(hook_) == address(0) || address(canvas_) == address(0)
@@ -135,6 +143,8 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         genesisRentBps = genesisRentBps_;
         genesisFadeTime = genesisFadeTime_;
         genesisStartPrice = genesisStartPrice_;
+        if (genesisExempt_.length > 6) revert InvalidParams();
+        _genesisExempt = genesisExempt_;
     }
 
     // ---------------------------------------------------------------- genesis ($CLOVER, tokenIndex 0, canvas 0)
@@ -147,7 +157,9 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint256 canvasId = canvas.createCanvasFor(
             genesisCreator, "Genesis", genesisSize, genesisRentBps, genesisFadeTime, genesisStartPrice, address(clover)
         );
-        _launch(address(clover), genesisCreator, genesisTokenFeeBps, genesisCanvasShareBps, canvasId, msg.value, 0);
+        _launch(
+            address(clover), genesisCreator, genesisTokenFeeBps, genesisCanvasShareBps, canvasId, _genesisExempt, msg.value, 0
+        );
     }
 
     // ---------------------------------------------------------------- public launch
@@ -169,11 +181,16 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         token = address(new CloverToken{salt: salt}(p.name, p.symbol, address(this)));
         canvas.fund{value: LAUNCH_FEE}(0);
         canvasId = canvas.createCanvasFor(msg.sender, p.canvasName, p.size, p.rentBps, p.fadeTime, p.startPrice, token);
-        tokenIndex =
-            _launch(token, msg.sender, p.tokenFeeBps, p.canvasShareBps, canvasId, msg.value - LAUNCH_FEE, p.devBuyMinOut);
+        tokenIndex = _launch(
+            token, msg.sender, p.tokenFeeBps, p.canvasShareBps, canvasId, p.exemptWallets, msg.value - LAUNCH_FEE, p.devBuyMinOut
+        );
     }
 
     // ---------------------------------------------------------------- views
+
+    function genesisExemptWallets() external view returns (address[] memory) {
+        return _genesisExempt;
+    }
 
     function tokenCount() external view returns (uint256) {
         return _tokens.length;
@@ -212,6 +229,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         uint16 tokenFeeBps,
         uint16 canvasShareBps,
         uint256 canvasId,
+        address[] memory exempt,
         uint256 devBuy,
         uint256 devBuyMinOut
     ) private returns (uint256 tokenIndex) {
@@ -230,7 +248,7 @@ contract Launchpad is ReentrancyGuard, IUnlockCallback {
         );
         tokenIndexPlusOne[token] = tokenIndex + 1;
 
-        hook.registerPool(key, tokenIndex, uint24(tokenFeeBps) * 100, creator, canvasId, canvasShareBps);
+        hook.registerPool(key, tokenIndex, uint24(tokenFeeBps) * 100, creator, canvasId, canvasShareBps, exempt);
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(TICK_UPPER));
         _addLiquidity(tokenIndex, key);
         _emitLaunched(tokenIndex, canvasShareBps);

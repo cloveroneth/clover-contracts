@@ -57,6 +57,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
 
     address launchWallet = makeAddr("launchWallet");
     address trader = makeAddr("trader");
+    address exemptWallet = makeAddr("exemptWallet");
     bool forked;
     uint256 recipientBeforeLaunch;
     Snap snapBefore;
@@ -98,6 +99,8 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         c.genesisRentBps = 500;
         c.genesisFadeTime = 3 days;
         c.genesisStartPrice = 0.002 ether;
+        c.genesisExempt = new address[](1);
+        c.genesisExempt[0] = exemptWallet;
         c.devBuy = 0.05 ether;
         c.maxSaltIterations = 400_000;
     }
@@ -179,6 +182,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         canvas.capture{value: 0.002 ether + 0.01 ether}(0, 0.002 ether, 0.05 ether, 0x7bc043);
         assertEq(canvas.ownerOf(0), trader);
 
+        _openingProtection(p);
         _fourQuadrants(p, UNIVERSAL_ROUTER, "external Uniswap UR");
         _fourQuadrants(p, PROGRAMMABLE_SWAP_ROUTER, "Programmable swap router");
         _secondUserAfterTime(p);
@@ -200,6 +204,65 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         emit log_named_uint("initial buy vault PoolManager native claims wei", IPoolManager(POOL_MANAGER).balanceOf(address(vault), 0));
         assertEq(vault.platformAccrued(), expected, "initial buy fee");
         assertEq(IPoolManager(POOL_MANAGER).balanceOf(address(vault), 0), expected, "backing");
+    }
+
+    /// @notice Opening protection right after the launch transaction, through the canonical Uniswap UR:
+    ///         99 % buy fee decaying over 30 s (platform fee still ceil 30 bps of the gross), exempt wallets at the
+    ///         normal rate, 2 % per-wallet buy limit for 300 s even for exempt wallets.
+    function _openingProtection(Prepared memory p) internal {
+        CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        PoolKey memory key = p.stampRequest.poolKey;
+        uint256 t0 = block.timestamp;
+        emit log_string("opening protection");
+        _openingBuy(p, trader, 0.01 ether, 990_000, "  t+0s non-exempt");
+        vm.warp(t0 + 15);
+        _openingBuy(p, trader, 0.01 ether, 990_000 - (990_000 - 33_000) * 15 / 30, "  t+15s non-exempt");
+        _openingBuy(p, exemptWallet, 0.01 ether, 33_000, "  t+15s exempt wallet");
+        _openingBuy(p, launchWallet, 0.01 ether, 33_000, "  t+15s creator");
+        // 2 % of the supply is ~0.17 ETH at the start; 0.5 ETH exceeds it, exempt or not.
+        vm.deal(exemptWallet, 1 ether);
+        vm.prank(exemptWallet, exemptWallet);
+        vm.expectRevert();
+        IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 0.5 ether}(
+            hex"10", _v4ExactInSingle(key, true, 0.5 ether), block.timestamp
+        );
+        assertLe(hook.openingBought(key.toId(), exemptWallet), hook.OPENING_MAX_BUY());
+        vm.warp(t0 + 30);
+        _openingBuy(p, trader, 0.01 ether, 33_000, "  t+30s non-exempt");
+        // After 300 s the limit is gone.
+        vm.warp(t0 + 300);
+        vm.deal(exemptWallet, 1 ether);
+        vm.prank(exemptWallet, exemptWallet);
+        IUniversalRouter(UNIVERSAL_ROUTER).execute{value: 0.5 ether}(
+            hex"10", _v4ExactInSingle(key, true, 0.5 ether), block.timestamp
+        );
+    }
+
+    function _openingBuy(Prepared memory p, address who, uint128 amount, uint256 ratePips, string memory label) internal {
+        CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        uint256 accrued0 = hook.platformAccrued();
+        vm.deal(who, who.balance + amount);
+        vm.recordLogs();
+        vm.prank(who, who);
+        IUniversalRouter(UNIVERSAL_ROUTER).execute{value: amount}(
+            hex"10", _v4ExactInSingle(p.stampRequest.poolKey, true, amount), block.timestamp
+        );
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = keccak256("FeeTaken(bytes32,address,bool,uint256,uint256,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(hook) || logs[i].topics[0] != topic) continue;
+            (, uint256 gross, uint256 plat, uint256 tokenFee) = abi.decode(logs[i].data, (bool, uint256, uint256, uint256));
+            emit log_string(label);
+            emit log_named_uint("    total fee rate (pips)", ratePips);
+            emit log_named_uint("    platform fee wei", plat);
+            emit log_named_uint("    token fee wei", tokenFee);
+            assertEq(gross, amount);
+            assertEq(plat, (gross * 30 + 9_999) / 10_000, "platform ceil 30 bps");
+            assertEq(tokenFee, gross * (ratePips - 3_000) / 1_000_000, "opening rate");
+            assertEq(hook.platformAccrued() - accrued0, plat);
+            return;
+        }
+        revert("no FeeTaken");
     }
 
     struct Snap {
@@ -379,7 +442,8 @@ contract CloverLaunchForkTest is Test, CloverGraph {
             rentBps: 500,
             fadeTime: 1 days,
             startPrice: 0.001 ether,
-            devBuyMinOut: 0
+            devBuyMinOut: 0,
+            exemptWallets: new address[](0)
         });
         vm.prank(trader);
         uint256 g0 = gasleft();
@@ -390,6 +454,7 @@ contract CloverLaunchForkTest is Test, CloverGraph {
         assertGt(CloverToken(token).balanceOf(trader), 0);
         // Child pools on the same hook pay the same pool-enforced 30 bps into the same vault.
         CloverHook hook = CloverHook(payable(p.accounts[T_HOOK]));
+        vm.warp(block.timestamp + hook.OPENING_LIMIT_PERIOD());
         uint256 plat0 = hook.platformAccrued();
         vm.deal(trader, 1 ether);
         vm.prank(trader);

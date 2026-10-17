@@ -32,6 +32,13 @@ import {EthereumNativeFeeVaultV3} from "./programmable/EthereumNativeFeeVaultV3.
 ///   `PLATFORM_RECIPIENT` (0xD88539d3c4C460136a733A3Fd60cf6BF269079da). No owner, setter or other withdrawal.
 /// - Token fee: taken from the PoolManager with `take` and split: `canvasShareBps` accrues for the token's
 ///   canvas (sent by the permissionless `flush`), the rest is owed to the token creator.
+///
+/// Opening protection, on every pool from its creation (anti-sniping):
+/// - Opening buy fee: total buy fee 99 % at creation, decaying linearly to the normal rate over 30 s. The part
+///   above the normal rate is added to the token fee (same split). The platform fee stays 30 bps of the gross.
+///   Exempt: the Launchpad initial buy, the token creator and up to 6 wallets fixed at launch (`tx.origin`).
+/// - Opening buy limit: for 300 s, cumulative buys per wallet (`tx.origin`) are capped at 2 % of the supply,
+///   exempt wallets included.
 contract CloverHook is IHooks {
     using PoolIdLibrary for PoolKey;
 
@@ -47,6 +54,14 @@ contract CloverHook is IHooks {
     /// @notice Lowering the canvas share: at most 10 points, at most once per 7 days.
     uint16 public constant MAX_SHARE_DECREASE_BPS = 1_000;
     uint256 public constant SHARE_DECREASE_DELAY = 7 days;
+    /// @notice Total buy fee at pool creation, decaying linearly to the normal rate over `OPENING_DECAY`.
+    uint24 public constant OPENING_FEE_PIPS = 990_000;
+    uint256 public constant OPENING_DECAY = 30 seconds;
+    /// @notice For `OPENING_LIMIT_PERIOD`, a wallet can buy at most `OPENING_MAX_BUY` (2 % of the supply).
+    uint256 public constant OPENING_LIMIT_PERIOD = 300 seconds;
+    uint256 public constant OPENING_MAX_BUY = 20_000_000 ether;
+    /// @notice Wallets exempt from the opening buy fee, in addition to the token creator.
+    uint256 public constant MAX_OPENING_EXEMPT = 6;
 
     // ---------------------------------------------------------------- immutables
 
@@ -71,6 +86,7 @@ contract CloverHook is IHooks {
         uint32 tokenIndex;
         uint24 tokenFeePips;
         bool registered;
+        uint40 launchedAt;
     }
 
     struct TokenConfig {
@@ -84,6 +100,8 @@ contract CloverHook is IHooks {
     mapping(uint256 tokenIndex => TokenConfig) public tokenConfig;
     mapping(uint256 tokenIndex => uint256) public canvasPending;
     mapping(address creator => uint256) public creatorOwed;
+    mapping(uint256 tokenIndex => mapping(address wallet => bool)) public openingExempt;
+    mapping(PoolId => mapping(address wallet => uint256)) public openingBought;
 
     // ---------------------------------------------------------------- events
 
@@ -96,6 +114,7 @@ contract CloverHook is IHooks {
         uint24 tokenFeePips,
         uint16 canvasShareBps
     );
+    event OpeningExempt(uint256 indexed tokenIndex, address indexed wallet);
     event FeeTaken(
         PoolId indexed poolId, address indexed sender, bool isBuy, uint256 gross, uint256 platform, uint256 tokenFee
     );
@@ -120,6 +139,8 @@ contract CloverHook is IHooks {
     error TransferFailed();
     error ZeroAddress();
     error InvalidRecipient();
+    error TooManyExempt();
+    error OpeningBuyLimit();
 
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -173,14 +194,16 @@ contract CloverHook is IHooks {
 
     // ---------------------------------------------------------------- launchpad entry point
 
-    /// @notice Registers the fee configuration of a pool before the Launchpad initializes it.
+    /// @notice Registers the fee configuration of a pool before the Launchpad initializes it. The opening
+    ///         protection starts now. `exempt` (at most 6 wallets) and `creator` skip the opening buy fee.
     function registerPool(
         PoolKey calldata key,
         uint256 tokenIndex,
         uint24 tokenFeePips,
         address creator,
         uint256 canvasId,
-        uint16 canvasShareBps
+        uint16 canvasShareBps,
+        address[] calldata exempt
     ) external onlyLaunchpad {
         PoolId id = key.toId();
         if (poolConfig[id].registered) revert PoolAlreadyRegistered();
@@ -188,10 +211,22 @@ contract CloverHook is IHooks {
             tokenFeePips < MIN_TOKEN_FEE_PIPS || tokenFeePips > MAX_TOKEN_FEE_PIPS
                 || canvasShareBps < MIN_CANVAS_SHARE_BPS || canvasShareBps > BPS
         ) revert InvalidFee();
-        poolConfig[id] = PoolConfig({tokenIndex: uint32(tokenIndex), tokenFeePips: tokenFeePips, registered: true});
+        if (exempt.length > MAX_OPENING_EXEMPT) revert TooManyExempt();
+        poolConfig[id] = PoolConfig({
+            tokenIndex: uint32(tokenIndex),
+            tokenFeePips: tokenFeePips,
+            registered: true,
+            launchedAt: uint40(block.timestamp)
+        });
         tokenConfig[tokenIndex] =
             TokenConfig({creator: creator, canvasId: uint32(canvasId), canvasShareBps: canvasShareBps, lastDecrease: 0});
         emit PoolRegistered(id, tokenIndex, creator, canvasId, tokenFeePips, canvasShareBps);
+        openingExempt[tokenIndex][creator] = true;
+        emit OpeningExempt(tokenIndex, creator);
+        for (uint256 i; i < exempt.length; ++i) {
+            openingExempt[tokenIndex][exempt[i]] = true;
+            emit OpeningExempt(tokenIndex, exempt[i]);
+        }
     }
 
     // ---------------------------------------------------------------- token creator
@@ -240,10 +275,15 @@ contract CloverHook is IHooks {
 
     // ---------------------------------------------------------------- views
 
-    /// @notice Fee components for a gross ETH amount, as charged by the hook.
+    /// @notice Fee components for a gross ETH amount, as charged by the hook outside the opening window.
     function quoteFee(PoolId id, uint256 gross) external view returns (uint256 platform, uint256 tokenFee) {
         platform = (gross * PLATFORM_FEE_PIPS + PIPS - 1) / PIPS;
         tokenFee = gross * poolConfig[id].tokenFeePips / PIPS;
+    }
+
+    /// @notice Current total fee rate (pips) of a buy by `buyer` through `sender`, opening fee included.
+    function buyFeePips(PoolId id, address sender, address buyer) external view returns (uint256) {
+        return _rate(_config(id), sender, buyer, true);
     }
 
     // ---------------------------------------------------------------- hook callbacks
@@ -276,32 +316,43 @@ contract CloverHook is IHooks {
         if (exactInput != params.zeroForOne) {
             return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
-        PoolId id = key.toId();
-        PoolConfig memory cfg = _config(id);
-        uint256 gross;
-        if (exactInput) {
-            gross = uint256(-params.amountSpecified);
-        } else {
-            gross = uint256(params.amountSpecified) * PIPS / (PIPS - _rate(cfg));
-        }
-        uint256 fee = _charge(id, cfg, sender, params.zeroForOne, gross);
+        uint256 fee = _beforeSwapFee(sender, key.toId(), params.zeroForOne, params.amountSpecified);
         return (IHooks.beforeSwap.selector, toBeforeSwapDelta(_toInt128(fee), 0), 0);
     }
 
-    /// @dev Exact-in sell: fee on the ETH output. Exact-out buy: fee on the gross ETH input.
-    ///      Both return a positive unspecified delta (ETH).
+    function _beforeSwapFee(address sender, PoolId id, bool isBuy, int256 amountSpecified) private returns (uint256) {
+        PoolConfig memory cfg = _config(id);
+        uint256 rate = _rate(cfg, sender, tx.origin, isBuy);
+        uint256 gross;
+        if (amountSpecified < 0) {
+            gross = uint256(-amountSpecified);
+        } else {
+            gross = uint256(amountSpecified) * PIPS / (PIPS - rate);
+        }
+        return _charge(id, cfg, sender, isBuy, gross, rate);
+    }
+
+    /// @dev Every buy: opening buy limit. Exact-in sell: fee on the ETH output. Exact-out buy: fee on the gross
+    ///      ETH input. Both return a positive unspecified delta (ETH).
     function afterSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta delta, bytes calldata)
         external
         onlyPoolManager
         returns (bytes4, int128)
     {
+        PoolId id = key.toId();
+        PoolConfig memory cfg = _config(id);
+        if (params.zeroForOne) _limitOpeningBuy(id, cfg, delta.amount1());
         bool exactInput = params.amountSpecified < 0;
         if (exactInput == params.zeroForOne) return (IHooks.afterSwap.selector, 0);
-        return (IHooks.afterSwap.selector, _afterSwapFee(sender, key.toId(), exactInput, delta.amount0()));
+        return (IHooks.afterSwap.selector, _afterSwapFee(sender, id, cfg, exactInput, delta.amount0()));
     }
 
-    function _afterSwapFee(address sender, PoolId id, bool exactInput, int128 amount0) private returns (int128) {
-        PoolConfig memory cfg = _config(id);
+    function _afterSwapFee(address sender, PoolId id, PoolConfig memory cfg, bool exactInput, int128 amount0)
+        private
+        returns (int128)
+    {
+        // exactInput here means a sell (oneForZero); otherwise an exact-out buy.
+        uint256 rate = _rate(cfg, sender, tx.origin, !exactInput);
         uint256 gross;
         if (exactInput) {
             // Sell exact-in: ETH leaves the pool, amount0 > 0.
@@ -309,11 +360,10 @@ contract CloverHook is IHooks {
         } else {
             // Buy exact-out: ETH enters the pool, amount0 < 0. Gross = net + fees.
             uint256 net = amount0 < 0 ? uint256(uint128(-amount0)) : 0;
-            gross = net * PIPS / (PIPS - _rate(cfg));
+            gross = net * PIPS / (PIPS - rate);
         }
         if (gross == 0) return 0;
-        // exactInput here means a sell (oneForZero); otherwise an exact-out buy.
-        return _toInt128(_charge(id, cfg, sender, !exactInput, gross));
+        return _toInt128(_charge(id, cfg, sender, !exactInput, gross, rate));
     }
 
     // ---------------------------------------------------------------- unused callbacks
@@ -367,16 +417,32 @@ contract CloverHook is IHooks {
         if (!cfg.registered) revert PoolNotRegistered();
     }
 
-    function _rate(PoolConfig memory cfg) private pure returns (uint256) {
-        return uint256(PLATFORM_FEE_PIPS) + cfg.tokenFeePips;
+    /// @dev Total fee rate: platform + token fee, or for a non-exempt buy during the first 30 s, the opening
+    ///      rate decaying linearly from 99 % to that normal rate.
+    function _rate(PoolConfig memory cfg, address sender, address buyer, bool isBuy) private view returns (uint256 rate) {
+        rate = uint256(PLATFORM_FEE_PIPS) + cfg.tokenFeePips;
+        if (!isBuy) return rate;
+        uint256 elapsed = block.timestamp - cfg.launchedAt;
+        if (elapsed >= OPENING_DECAY || sender == launchpad || openingExempt[cfg.tokenIndex][buyer]) return rate;
+        uint256 opening = OPENING_FEE_PIPS - (OPENING_FEE_PIPS - rate) * elapsed / OPENING_DECAY;
+        if (opening > rate) rate = opening;
     }
 
-    function _charge(PoolId id, PoolConfig memory cfg, address sender, bool isBuy, uint256 gross)
+    /// @dev Tokens bought by `tx.origin` during the first 300 s, capped at 2 % of the supply.
+    function _limitOpeningBuy(PoolId id, PoolConfig memory cfg, int128 tokensOut) private {
+        if (tokensOut <= 0 || block.timestamp >= uint256(cfg.launchedAt) + OPENING_LIMIT_PERIOD) return;
+        uint256 bought = openingBought[id][tx.origin] + uint256(uint128(tokensOut));
+        if (bought > OPENING_MAX_BUY) revert OpeningBuyLimit();
+        openingBought[id][tx.origin] = bought;
+    }
+
+    function _charge(PoolId id, PoolConfig memory cfg, address sender, bool isBuy, uint256 gross, uint256 rate)
         private
         returns (uint256 fee)
     {
         uint256 platform = (gross * PLATFORM_FEE_PIPS + PIPS - 1) / PIPS;
-        uint256 tokenFee = gross * cfg.tokenFeePips / PIPS;
+        // Token fee, plus the opening surplus on early buys; same base, floored.
+        uint256 tokenFee = gross * (rate - PLATFORM_FEE_PIPS) / PIPS;
         fee = platform + tokenFee;
         if (fee == 0) return 0;
 

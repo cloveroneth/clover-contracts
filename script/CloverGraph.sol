@@ -51,6 +51,7 @@ abstract contract CloverGraph {
         uint16 genesisRentBps;
         uint32 genesisFadeTime;
         uint96 genesisStartPrice;
+        address[] genesisExempt;
         uint256 devBuy;
         uint256 maxSaltIterations;
     }
@@ -160,7 +161,8 @@ abstract contract CloverGraph {
                 c.genesisSize,
                 c.genesisRentBps,
                 c.genesisFadeTime,
-                c.genesisStartPrice
+                c.genesisStartPrice,
+                c.genesisExempt
             )
         );
     }

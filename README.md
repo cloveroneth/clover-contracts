@@ -39,10 +39,24 @@ claim backing and of the recipient balance: the initial buy, buy/sell exact-in/e
 canonical Uniswap Universal Router and through the router used by programmable.market, a second wallet after
 9 days, and the claim (log: `launch/evidence/fork-launch-test.txt`).
 
+## Opening protection (anti-snipe)
+
+Enforced by the hook on every pool, from the block that creates it:
+
+- **Opening buy fee**: the total buy fee starts at **99 %** and decays linearly to the normal rate (3.3 % for
+  $CLOVER) over **30 seconds**. The Programmable platform fee stays exactly 30 bps of the gross; the part above
+  the normal rate is added to the token fee (same canvas / creator split). Sells always pay the normal rate.
+- **Exempt wallets**: the token creator and up to **6 wallets** fixed at launch pay the normal rate from the first
+  block. For $CLOVER they are `genesis.exemptWallets` in `launch/launch.params.json`, passed to the Launchpad
+  constructor (`genesisExemptWallets()`); for later tokens, `LaunchParams.exemptWallets`. They cannot be changed.
+- **Opening buy limit**: for **300 seconds**, the tokens bought per wallet are capped at **2 % of the supply**
+  (20,000,000), exempt wallets and the creator's initial buy included.
+- The buyer is identified by `tx.origin`. These rules reduce sniping; they cannot rule it out (several wallets).
+
 ## Liquidity
 
 `Launchpad` initializes each pool and adds the whole token supply as one single-sided position
-(ticks `-887200` to `200200`, spacing 200). The position is owned by the Launchpad, which has no function
+(ticks `-887200` to `186400`, spacing 200): starting FDV about 8 ETH (over $15,000). The position is owned by the Launchpad, which has no function
 to remove it: the liquidity is permanent.
 
 ## Build and test
